@@ -1,0 +1,150 @@
+# Stage 3 — Mathematical Model and Assumptions
+
+All times are in **minutes** unless stated. Default values are shown in brackets
+and can be changed in the application.
+
+## 3.1 Type of simulation
+
+This is a **terminating** simulation: one run represents one trading period
+(default T = 240 min). The store opens empty at t = 0, which is the real starting
+condition, so no warm-up period is needed. Arrivals stop at T and the run stops at
+T; anyone still inside is reported as *remaining in the system*.
+
+## 3.2 Random input distributions
+
+| Quantity | Distribution | Default parameters | Why this distribution |
+|---|---|---|---|
+| Inter-arrival time A | Exponential(λ) | λ = 1.4 customers/min | Independent arrivals from a large population form a Poisson process |
+| Basket category | Discrete | P(S)=0.45, P(M)=0.40, P(L)=0.15 | Observed mix of small and large shops |
+| Items, Small | Discrete Uniform{1..5} | — | Category definition |
+| Items, Medium | Discrete Uniform{6..15} | — | Category definition |
+| Items, Large | Discrete Uniform{16..L_max} | L_max = 40 | "16 or more" needs an upper bound to sample |
+| Section of each item | Categorical | Grocery 0.40, Beverages 0.20, Household 0.20, Personal Care 0.20 | Groceries dominate a typical basket |
+| Pick time per item | Exponential | mean m_p = 0.5 min | Memoryless browsing time; sum of k items is Erlang(k) |
+| Walking speed v | Uniform(0.8, 1.4) m/s | — | Typical indoor walking speeds |
+| Scan time per item | Exponential | mean s = 0.05 min (3 s) | Varies item to item |
+| Payment time P | Triangular(a, c, b) | a = 0.5, c = 1.0, b = 2.0 | Bounded, with a most-likely value (cash vs card vs M-Pesa) |
+
+### Sampling methods
+
+- Exponential by inverse transform: `A = -ln(U) / λ`, with `U ~ Uniform(0,1)`.
+- Triangular, Uniform, Gamma and Multinomial use NumPy's `Generator`
+  (PCG64), seeded by the run seed.
+
+## 3.3 Derived quantities
+
+**Items per section.** For a customer with n items and section weights
+w = (w_G, w_B, w_H, w_P), the counts are `Multinomial(n, w)`. The customer
+visits only sections with at least one item, in store-route order
+Grocery → Beverages → Household → Personal Care.
+
+**Shopping time in a section** with k items:
+
+    T_shop = Σ_{j=1..k} X_j,  X_j ~ Exp(mean m_p)   ⇒   T_shop ~ Gamma(k, m_p),  E[T_shop] = k·m_p
+
+**Walking time** between two points p and q (metres):
+
+    T_walk = ‖p − q‖ / (60 · v)
+
+**Service time** for a customer with n items:
+
+    S = Σ_{j=1..n} Y_j + P,  Y_j ~ Exp(mean s)   ⇒   S = Gamma(n, s) + Triangular(a, c, b)
+    E[S | n] = n·s + (a + b + c)/3
+
+With defaults, mean items E[n] ≈ 9.75 and E[S] ≈ 0.05·9.75 + 1.167 ≈ 1.65 min.
+
+**Offered load.** Expected cashier work arriving per minute is λ·E[S]. With
+λ = 1.4 and E[S] ≈ 1.65 the load is ≈ 2.32 cashiers, so 4 counters run at
+≈ 58% utilisation. If λ·E[S] ≥ number of counters the queues grow without limit
+(the system is unstable).
+
+## 3.4 Strategy decision rules
+
+Let counter c have queue length Q_c (waiting only) and busy indicator B_c.
+
+1. **Shortest Queue:** `c* = argmin_c (Q_c + B_c)`.
+2. **Shortest Estimated Waiting Time:**
+
+        Ŵ_c = R̂_c + Σ_{j ∈ queue c} E[S | n_j]
+        R̂_c = max(0, E[S | n_current] − (t − start_current))   if busy, else 0
+        c*  = argmin_c Ŵ_c
+
+   The customer sees basket sizes but not actual service times, so expected
+   values are used. This is realistic and means SEWT can still make mistakes.
+3. **Express / Normal:** eligible set E = express counters if n ≤ 5, else normal
+   counters; `c* = argmin_{c ∈ E} (Q_c + B_c)`.
+
+Ties are broken by the lowest counter number. Every counter serves FIFO.
+
+## 3.5 Fair comparison: Common Random Numbers
+
+All customers (arrival time, items, section split, walking speed, pick times,
+service time) are generated **before** the run from the seed. The three
+strategies then process the same list of customers. Any difference in results is
+caused by the strategy, not by luck. This variance-reduction technique is called
+**Common Random Numbers (CRN)**.
+
+## 3.6 Performance measures and formulas
+
+Notation for customer i: arrival aᵢ, queue join qᵢ, service start sᵢ,
+departure dᵢ. Run length T. Number of counters C.
+
+| Measure | Formula | Notes |
+|---|---|---|
+| Customers generated | N_gen = #{i : aᵢ ≤ T} | |
+| Customers served | N_srv = #{i : dᵢ ≤ T} | |
+| Waiting time | W_q,i = sᵢ − qᵢ | For customers whose service started by T |
+| Average waiting time | W̄_q = (1/N_start) Σ W_q,i | |
+| Maximum waiting time | max_i W_q,i | |
+| Average service time | S̄ = (1/N_srv) Σ (dᵢ − sᵢ) | |
+| Average time in store | W̄ = (1/N_srv) Σ (dᵢ − aᵢ) | Served customers |
+| Average queue length (per counter) | L̄_q,c = (1/T) ∫₀ᵀ Q_c(t) dt | Time-weighted |
+| Average queue length (store) | L̄_q = (1/C) Σ_c L̄_q,c | Mean over counters |
+| Average total waiting | L̄_q,total = Σ_c L̄_q,c | People waiting anywhere |
+| Maximum queue length | max_{c,t} Q_c(t) | Longest single queue seen |
+| Cashier utilisation | ρ_c = (busy time of c in [0, T]) / T | Overall ρ = mean of ρ_c |
+| Remaining at end | N_gen − N_srv | Split into shopping, waiting, in service |
+
+**Why time-weighted?** Queue length is a value that holds for a length of time.
+A queue of 10 lasting 1 minute should count less than a queue of 3 lasting an
+hour. Because Q_c(t) only changes at events, the integral is an exact sum:
+
+    ∫₀ᵀ Q_c(t) dt = Σ_k Q_c(t_k) · (t_{k+1} − t_k)
+
+**Little's Law check.** For a stable queue, L_q = λ_eff · W_q. We compare
+`L̄_q,total` with `(N_start / T) · W̄_q` as a consistency check.
+
+## 3.7 Replications and confidence intervals
+
+One run is one random sample. For the comparison we run R replications
+(seeds `seed, seed+1, …`), each using CRN across strategies. For a measure X
+with replication values x₁…x_R:
+
+    x̄ = (1/R) Σ x_r,   s² = (1/(R−1)) Σ (x_r − x̄)²
+    95% CI = x̄ ± t_{R−1, 0.975} · s / √R
+
+## 3.8 Validation against queueing theory
+
+Shopping is an infinite-server stage, and the output of an M/G/∞ stage fed by a
+Poisson process is itself Poisson. So customers reach checkout as a Poisson
+stream with rate λ. In validation mode the service time is replaced by
+Exponential(mean 1/μ). With one counter the checkout is then an **M/M/1** queue:
+
+    ρ = λ/μ,   W_q = ρ / (μ − λ),   L_q = ρ² / (1 − ρ)
+
+A long run of the engine must reproduce these values (see `docs/05-testing-validation.md`).
+
+## 3.9 Assumptions
+
+1. Arrivals follow a homogeneous Poisson process (no peak hours within a run).
+2. Each counter has one cashier and is open for the whole run.
+3. Customers do not balk (leave on seeing a long queue), renege (leave the
+   queue) or jockey (switch queues).
+4. Shopping sections have unlimited capacity; aisle congestion is ignored.
+5. Customers visit only the sections they buy from, in a fixed route order.
+6. Walking is in straight lines between section centres.
+7. Service time depends only on the customer, not on the cashier.
+8. The strategy decision is made on arrival at the checkout area, using the
+   information visible at that moment.
+9. Departure is the end of service; the walk to the exit is shown in the
+   animation only and is not counted in time in store.
