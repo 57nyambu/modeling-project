@@ -1,7 +1,8 @@
-import { Group, Pagination, Select, Table, Text } from '@mantine/core'
+import { Button, Group, Pagination, Select, Table, Text } from '@mantine/core'
 import { useMemo, useState } from 'react'
 import type { BasketKey, Trace, TraceCustomer } from '../api'
 import { BASKET_COLOURS, capitalise, fmt } from '../format'
+import { IconRoute } from './Icons'
 
 type State = 'served' | 'in_service' | 'waiting' | 'shopping'
 
@@ -22,8 +23,15 @@ const STATE_LABEL: Record<State, string> = {
 const PAGE = 25
 const t = (v: number | null) => (v === null ? '-' : fmt(v, 2))
 
+interface Props {
+  trace: Trace
+  sectionLabels: Record<string, string>
+  tracedId?: number | null
+  onTrace?: (id: number) => void
+}
+
 /** Every customer's timeline, straight from the engine's event times. */
-export function CustomerLog({ trace, sectionLabels }: { trace: Trace; sectionLabels: Record<string, string> }) {
+export function CustomerLog({ trace, sectionLabels, tracedId = null, onTrace }: Props) {
   const [basket, setBasket] = useState('all')
   const [state, setState] = useState('all')
   const [counter, setCounter] = useState('all')
@@ -67,11 +75,12 @@ export function CustomerLog({ trace, sectionLabels }: { trace: Trace; sectionLab
               <Table.Th ta="right">Left</Table.Th>
               <Table.Th ta="right">In store</Table.Th>
               <Table.Th style={{ whiteSpace: 'nowrap' }}>Outcome</Table.Th>
+              {onTrace && <Table.Th><span className="visually-hidden">Trace</span></Table.Th>}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {shown.map((c) => (
-              <Table.Tr key={c.id}>
+              <Table.Tr key={c.id} style={c.id === tracedId ? { background: '#e8f1fc' } : undefined}>
                 <Table.Td>{c.id}</Table.Td>
                 <Table.Td style={{ whiteSpace: 'nowrap' }}>
                   <Group gap={6} wrap="nowrap">
@@ -90,6 +99,14 @@ export function CustomerLog({ trace, sectionLabels }: { trace: Trace; sectionLab
                 <Table.Td ta="right">{t(c.d)}</Table.Td>
                 <Table.Td ta="right">{c.d !== null ? fmt(c.d - c.a, 2) : '-'}</Table.Td>
                 <Table.Td style={{ whiteSpace: 'nowrap' }}>{STATE_LABEL[stateOf(c)]}</Table.Td>
+                {onTrace && (
+                  <Table.Td py={2}>
+                    <Button size="compact-xs" variant="subtle" color="ink" leftSection={<IconRoute size={13} />}
+                      onClick={() => onTrace(c.id)} aria-label={`Trace customer ${c.id} on the floor plan`}>
+                      {c.id === tracedId ? 'Tracing' : 'Trace'}
+                    </Button>
+                  </Table.Td>
+                )}
               </Table.Tr>
             ))}
           </Table.Tbody>

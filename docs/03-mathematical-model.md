@@ -62,9 +62,34 @@ Grocery → Beverages → Household → Personal Care.
 
     T_shop = Σ_{j=1..k} X_j,  X_j ~ Exp(mean m_p)   ⇒   T_shop ~ Gamma(k, m_p),  E[T_shop] = k·m_p
 
-**Walking time** between two points p and q (metres):
+**Walking time** along a route with corner points p₀, p₁, …, p_k (metres):
 
-    T_walk = ‖p − q‖ / (60 · v)
+    L = Σ_{j=1..k} ‖p_j − p_{j−1}‖,     T_walk = L / (60 · v)
+
+The route is the shortest path on the store's walkway network, so customers
+never walk through shelving:
+
+- Each section has two shelving runs, which leave three aisles at
+  y = 3.93, 6.10 and 8.27 m (back, middle, front). Sections share the same
+  depth, so each aisle row runs straight across all four sections.
+- Customers change aisle row only at a cross-aisle: x = 2.4, 11.0, 20.0, 29.0
+  and 37.6 m (the outer ends of the shelving and the gaps between sections).
+- The front aisle opens onto the main aisle, open floor in front of the
+  sections, where walking is in straight lines. A walkway leads from the
+  entrance up the left side to the main aisle at (3, 12.5).
+
+Between two spots in the same aisle row the route is a straight line. Between
+rows it turns at the cross-aisle v that minimises
+|x_p − v| + |y_p − y_q| + |v − x_q|, which is the Manhattan distance whenever a
+cross-aisle lies between the two spots. From the back or middle aisle to the
+open floor the route runs along the aisle, down a cross-aisle to the front
+aisle, then straight to the target.
+
+**Shopping spot.** In each section on the route the customer picks all items
+at one spot: an aisle chosen uniformly from the three, and a place uniformly
+along the shelving (at least 1.1 m from the section's side edges). Spots come
+from their own random stream, seeded with (seed, 99), so they never change the
+arrivals, baskets, pick times or service times drawn from the main stream.
 
 **Service time** for a customer with n items:
 
@@ -98,8 +123,9 @@ Ties are broken by the lowest counter number. Every counter serves FIFO.
 
 ## 3.5 Fair comparison: Common Random Numbers
 
-All customers (arrival time, items, section split, walking speed, pick times,
-service time) are generated **before** the run from the seed. The three
+All customers (arrival time, items, section split, walking speed, shopping
+spots and routes, pick times, service time) are generated **before** the run
+from the seed. The three
 strategies then process the same list of customers. Any difference in results is
 caused by the strategy, not by luck. This variance-reduction technique is called
 **Common Random Numbers (CRN)**.
@@ -175,9 +201,12 @@ A long run of the engine must reproduce these values (see `docs/05-testing-valid
    queue) or jockey (switch queues).
 4. Shopping sections have unlimited capacity; aisle congestion is ignored.
 5. Customers visit only the sections they buy from, in a fixed route order.
-6. Walking is in straight lines between section centres.
+6. Customers walk the shortest route along the walkways (aisles, cross-aisles
+   and the main aisle) and pick all items in a section from one spot.
 7. Service time depends only on the customer, not on the cashier.
 8. The strategy decision is made on arrival at the checkout area, using the
    information visible at that moment.
 9. Departure is the end of service; the walk to the exit is shown in the
-   animation only and is not counted in time in store.
+   animation only and is not counted in time in store. Joining a lane and
+   stepping forward in a queue are also instantaneous in the model and only
+   drawn as short walks.

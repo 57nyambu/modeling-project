@@ -9,7 +9,7 @@ modeling-project/
 ├── api/                      Python: simulation engine + Django API
 │   ├── simulation/           Pure-Python DES engine (NO Django imports)
 │   │   ├── config.py         All parameters (SimulationConfig) + validation, lambda(t)
-│   │   ├── layout.py         Store geometry in metres (shared with the UI)
+│   │   ├── layout.py         Store geometry and walkways in metres, shortest routes (shared with the UI)
 │   │   ├── customers.py      All random sampling; pre-generates customers (CRN), thinning
 │   │   ├── strategies.py     Shortest Queue, Shortest Estimated Wait, Express/Normal
 │   │   ├── engine.py         Event list, clock, event handlers, counters, step series
@@ -27,10 +27,10 @@ modeling-project/
 │       ├── model.ts          Client copy of the formulas: input checks, load check, densities
 │       ├── router.ts         Hash routes such as #/simulation/12 and #/model/event-graph
 │       ├── theme.ts          Design tokens and Mantine theme
-│       ├── sim/              Floor plan, playback clock, trace interpolation, timeline scrubber
+│       ├── sim/              Floor plan, person figures, playback clock, route following, tracing, timeline scrubber
 │       ├── charts/           Hand-built SVG charts with tooltips and table views
 │       ├── diagrams/         The 17 model diagrams and their descriptions
-│       ├── components/       App shell pieces, parameter panel, customer log
+│       ├── components/       App shell pieces, parameter panel, customer log, journey panel
 │       └── pages/            Simulation, Compare, How the model works, Validation, Saved results
 └── docs/                     Stage documents and exported diagrams
 ```
@@ -53,20 +53,31 @@ finishes a 4-hour trading day in well under a second. So the visualisation is a
 **replay** of the finished run, not a second simulation:
 
 1. **Start** — React sends `POST /api/runs` with the parameters and strategy.
-2. Django calls `run_simulation(config, strategy)`. The engine records every
-   customer's event times: arrival, arrival and departure at each section,
-   checkout arrival, chosen counter, service start, departure. It also records
-   every change of the queue lengths, the number waiting, the busy cashiers and
-   the customers in the store.
+2. Django calls `run_simulation(config, strategy, record_decisions=True)`. The
+   engine records every customer's event times: arrival, arrival and departure
+   at each section, checkout arrival, chosen counter, service start, departure,
+   and what the customer saw at the checkout (people at each counter and the
+   estimated wait). It also records every change of the queue lengths, the
+   number waiting, the busy cashiers and the customers in the store.
 3. Django stores the run in SQLite and returns the measures, the step series and
-   a compact **trace** (those event times plus the store layout).
+   a compact **trace**: those event times, each customer's walking routes and
+   speed, and the store layout with its shelving and walkways.
 4. React's playback clock advances simulated time at the chosen speed. For each
    frame it computes where each customer is at time *t*:
    - before the arrival time: not yet in the store;
-   - between two known points: walking (straight-line interpolation);
-   - inside a section between its arrival and departure: shopping in an aisle;
-   - between checkout arrival and service start: in the queue, placed in FIFO order;
+   - between two known points: walking along the engine's route at the
+     customer's own speed (corners are rounded for drawing only);
+   - inside a section between its arrival and departure: shopping at their spot
+     in an aisle;
+   - between checkout arrival and service start: in the queue, placed in FIFO
+     order, stepping forward when the person ahead reaches the till;
    - between service start and departure: at the till.
+
+   Customers are drawn as small person figures: the shirt colour shows the
+   basket size, and each carries a hand basket or pushes a trolley. Clicking one
+   **traces** it: the floor plan draws the full route (walked part solid, the
+   rest dashed) with numbered stops, and a journey panel shows the timeline,
+   each step, and the counter choice exactly as the engine recorded it.
 5. **Pause / Resume / Reset / the timeline scrubber** only move the playback
    clock. Every position comes from engine event times, so the animation cannot
    disagree with the statistics. The charts show a dark playhead at the same time.

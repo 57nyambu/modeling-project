@@ -45,7 +45,7 @@ export function usePlayback(duration: number) {
       timeRef.current = Math.max(0, Math.min(duration, t))
       setTime(timeRef.current)
       if (timeRef.current >= duration) setState('finished')
-      else setState((s) => (s === 'finished' ? 'paused' : s))
+      else setState((s) => (s === 'finished' || s === 'idle' ? 'paused' : s))
     },
     [duration],
   )

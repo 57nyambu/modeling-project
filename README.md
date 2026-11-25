@@ -5,7 +5,7 @@ in four sections, choosing a checkout counter, queueing, paying and leaving. It
 compares three checkout strategies on identical customer streams and explains
 the model through seventeen diagrams.
 
-![Simulation page: floor-plan replay, timeline and live state](docs/images/simulation.png)
+![Simulation page: floor-plan replay with one customer traced, timeline and live state](docs/images/simulation.png)
 
 - `api/` — Python simulation engine (`api/simulation`) and Django API (`api/simulator`)
 - `web/` — React + TypeScript interface
@@ -16,7 +16,7 @@ the model through seventeen diagrams.
 
 | Page | What you can do |
 |---|---|
-| **Simulation** | Set parameters (with a live load check), choose a strategy and press **Start simulation**. The whole day is simulated on the server, then the floor plan replays it. **Pause**, **Resume**, **Reset**, jump to the end, change the speed, or drag the timeline, whose shading shows when queues build. Results include every required measure, queue charts per counter, waiting-time distribution, cashier utilisation and a log of every customer. |
+| **Simulation** | Set parameters (with a live load check), choose a strategy and press **Start simulation**. The whole day is simulated on the server, then the floor plan replays it: customers are person figures that walk the aisles, shop, queue in the lanes and pay. **Pause**, **Resume**, **Reset**, jump to the end, change the speed (down to 3 simulated seconds per second), or drag the timeline, whose shading shows when queues build. Click any customer, or **Trace** in the customer log, to follow one person: their route is drawn on the plan, and a journey panel shows their timeline and why they chose their counter. Results include every required measure, queue charts per counter, waiting-time distribution, cashier utilisation and a log of every customer. |
 | **Compare strategies** | Run all three strategies on the same customers for several replications. See a plain-language verdict, means with 95% confidence intervals, paired significance tests, every replication, and waits by basket size. |
 | **How the model works** | Walk through 17 diagrams: store layout, conceptual model, process flow, life cycle, event graph, engine loop, a worked example, strategy rules, distributions, arrivals, measures, experiment design, architecture, request sequence, validation and stages. **Present** opens them full screen; **SVG** and **PNG** download them for the report. |
 | **Validation** | Check the engine against exact M/M/1 queueing formulas. |

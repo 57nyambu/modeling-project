@@ -31,6 +31,10 @@ class BadRequest(Exception):
     pass
 
 
+# Runs carry the whole event trace, so they are sent without optional whitespace.
+COMPACT = {"separators": (",", ":")}
+
+
 def api_view(func):
     """Turn invalid input into a 400 JSON error with a readable message."""
 
@@ -87,7 +91,7 @@ def _comparison_results(cfg: SimulationConfig, reps: int) -> dict:
 def _upgrade_run(run: SimulationRun) -> SimulationRun:
     if run.metrics.get("schema") == RESULT_SCHEMA:
         return run
-    result = run_simulation(SimulationConfig.from_dict(run.parameters), run.strategy)
+    result = run_simulation(SimulationConfig.from_dict(run.parameters), run.strategy, record_decisions=True)
     run.metrics = compute_metrics(result)
     run.timeseries = time_series(result)
     run.trace = build_trace(result) if len(result.customers) <= settings.SIM_MAX_TRACE_CUSTOMERS else None
@@ -132,13 +136,13 @@ def runs_view(request):
         raise BadRequest("this run would generate too many customers: arrival rate x run length must be "
                          f"at most {settings.SIM_MAX_EXPECTED_CUSTOMERS}")
 
-    result = run_simulation(cfg, strategy)
+    result = run_simulation(cfg, strategy, record_decisions=True)
     trace = build_trace(result) if len(result.customers) <= settings.SIM_MAX_TRACE_CUSTOMERS else None
     run = SimulationRun.objects.create(
         strategy=strategy, parameters=cfg.to_dict(), metrics=compute_metrics(result),
         timeseries=time_series(result), trace=trace,
     )
-    return JsonResponse(_run_payload(run), status=201)
+    return JsonResponse(_run_payload(run), status=201, json_dumps_params=COMPACT)
 
 
 @csrf_exempt
@@ -148,7 +152,7 @@ def run_detail_view(request, pk: int):
     if request.method == "DELETE":
         run.delete()
         return HttpResponse(status=204)
-    return JsonResponse(_run_payload(_upgrade_run(run)))
+    return JsonResponse(_run_payload(_upgrade_run(run)), json_dumps_params=COMPACT)
 
 
 @require_GET

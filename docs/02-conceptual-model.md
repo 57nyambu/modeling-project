@@ -43,6 +43,8 @@ describe the system with **entities**, **attributes**, **resources**,
 | `items_per_section` | dict | How many items are taken from each section |
 | `route` | list | Sections visited, in store-route order |
 | `walking_speed` | m/s | Personal walking speed |
+| `shopping_spot` per section | metres | Where the customer stands to pick items: one aisle and a place along it |
+| `walking routes` | list of points | Shortest path along the walkways between consecutive points |
 | `pick_time` per section | minutes | Time spent selecting items in each section |
 | `service_time` | minutes | Time the cashier needs for this customer |
 | `counter` | int | Counter chosen at checkout |
@@ -72,7 +74,7 @@ shop at once (an infinite-server stage).
 
 | Activity | Duration |
 |---|---|
-| Walk entrance → first section, section → section, last section → checkout | distance / walking speed |
+| Walk entrance → first section, section → section, last section → checkout | route length along the walkways / walking speed |
 | Shop in a section | sum of per-item pick times |
 | Wait in queue | determined by the model (output, not input) |
 | Checkout service | scan time × items + payment time |

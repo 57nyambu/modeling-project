@@ -12,17 +12,19 @@ interface Props {
   waiting: Steps
   onSeek: (t: number) => void
   onScrubStart?: () => void
+  /** Time span of the traced customer, shaded on the timeline. */
+  band?: { start: number; end: number; label: string } | null
 }
 
 /**
  * Timeline you can drag to move through the run. Behind it, the number of
  * customers waiting over the whole run, so busy moments are easy to find.
  */
-export function Scrubber({ duration, time, waiting, onSeek, onScrubStart }: Props) {
+export function Scrubber({ duration, time, waiting, onSeek, onScrubStart, band }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const dragging = useRef(false)
   const height = 58
-  const m = { left: 6, right: 6, top: 6, bottom: 18 }
+  const m = { left: 6, right: 6, top: 8, bottom: 18 }
   const innerW = Math.max(10, width - m.left - m.right)
   const innerH = height - m.top - m.bottom
   const top = Math.max(1, maxOf(waiting))
@@ -92,6 +94,15 @@ export function Scrubber({ duration, time, waiting, onSeek, onScrubStart }: Prop
             </clipPath>
           </defs>
           <rect x={m.left} y={m.top} width={innerW} height={innerH} rx={4} fill={tokens.surface2} />
+          {band && (
+            <g>
+              <rect x={x(band.start)} y={m.top - 3} width={Math.max(2, x(band.end) - x(band.start))} height={innerH + 3}
+                fill={tokens.series} fillOpacity={0.12} />
+              <line x1={x(band.start)} x2={x(band.end)} y1={m.top - 3} y2={m.top - 3} stroke={tokens.series} strokeWidth={3} strokeLinecap="round">
+                <title>{band.label}</title>
+              </line>
+            </g>
+          )}
           <path d={area} fill={tokens.series} fillOpacity={0.16} />
           <path d={area} fill={tokens.series} fillOpacity={0.45} clipPath="url(#played)" />
           <line x1={m.left} x2={m.left + innerW} y1={m.top + innerH} y2={m.top + innerH} stroke={tokens.axis} />

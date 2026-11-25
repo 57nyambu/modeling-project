@@ -47,7 +47,7 @@ export function ConceptualDiagram() {
       <Label x={550} y={366} text="events change the state of customers and counters" size={10.5} />
 
       <Box x={30} y={480} w={520} h={120} kind="process" align="start" title="Activities: things that take time"
-        lines={['walking between points (distance / speed)', 'picking items in a section', 'waiting in a queue (an output of the model)', 'scanning the items and paying']} />
+        lines={['walking along the walkways (route length / speed)', 'picking items in a section', 'waiting in a queue (an output of the model)', 'scanning the items and paying']} />
       <Box x={570} y={480} w={500} h={120} kind="note" align="start" title="Events: instants where the state changes"
         lines={['ARRIVAL and SECTION_ARRIVE', 'SECTION_DEPART', 'CHECKOUT_ARRIVE: the strategy chooses a counter', 'SERVICE_END: pay, leave, next customer starts']} />
       <KindLegend x={30} y={622} kinds={['entity', 'resource', 'decision', 'data', 'process']} />
@@ -60,7 +60,7 @@ export function ProcessFlowDiagram() {
   const cx = 330
   const notes: [number, string, string][] = [
     [47, 'Arrivals', 'Time between arrivals ~ Exponential, mean 1/lambda'],
-    [119, 'Walking', 'distance / (60 v), with v ~ Uniform(0.8, 1.4) m/s'],
+    [119, 'Walking', 'route length along the aisles / (60 v), v ~ Uniform(0.8, 1.4) m/s'],
     [195, 'Picking k items', 'Gamma(k, m_p): the sum of k exponential pick times'],
     [363, 'Walking', 'from the last section to the checkout area'],
     [433, 'Choosing', 'the selected strategy; see the strategies diagram'],

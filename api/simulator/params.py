@@ -59,4 +59,5 @@ def meta() -> dict:
         "layout": layout.layout_dict(defaults["num_counters"]),
         "counter_span": {"x_min": layout.COUNTER_X_MIN, "x_max": layout.COUNTER_X_MAX,
                          "y": layout.COUNTER_Y},
+        "example_route": layout.example_route(),
     }

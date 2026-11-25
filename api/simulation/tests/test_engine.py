@@ -7,10 +7,14 @@ Run from the api folder:
 import unittest
 from dataclasses import replace
 
+from unittest import mock
+
 from simulation import (
     SimulationConfig,
+    build_trace,
     compute_metrics,
     generate_customers,
+    layout,
     run_simulation,
 )
 from simulation.comparison import compare_strategies, summarise
@@ -265,6 +269,112 @@ class TestPeakArrivals(unittest.TestCase):
             SimulationConfig.from_dict({"seed": 1.5})
         with self.assertRaises(ValueError):
             SimulationConfig.from_dict({"section_weights": 3})
+
+
+class TestWalkways(unittest.TestCase):
+    """Customers walk along aisles and never through shelving or checkout lanes."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.customers = generate_customers(replace(BASE, duration=120))
+
+    @staticmethod
+    def samples(path, step=0.05):
+        for (ax, ay), (bx, by) in zip(path, path[1:]):
+            n = max(1, int(layout.distance((ax, ay), (bx, by)) / step))
+            for k in range(n + 1):
+                yield ax + (bx - ax) * k / n, ay + (by - ay) * k / n
+
+    def test_aisles_lie_between_shelving(self):
+        for name in layout.SECTION_RECTS:
+            shelves = layout.gondolas(name)
+            for x, y, w, h in shelves:
+                for row in layout.AISLE_ROWS:
+                    self.assertFalse(y - 0.2 < row < y + h + 0.2, "aisle too close to a shelf")
+                for v in layout.CROSS_AISLES:
+                    self.assertFalse(x - 0.2 < v < x + w + 0.2, "cross-aisle runs through a shelf")
+
+    def test_routes_avoid_shelving_and_lanes(self):
+        shelves = [g for name in layout.SECTION_RECTS for g in layout.gondolas(name)]
+        for c in self.customers:
+            for path in c.paths:
+                for px, py in self.samples(path):
+                    self.assertTrue(0 < px < layout.STORE_WIDTH and 0 < py < layout.STORE_HEIGHT)
+                    for x, y, w, h in shelves:
+                        self.assertFalse(x < px < x + w and y < py < y + h, f"customer {c.id} walks through a shelf")
+                    if py > layout.CHECKOUT_POINT[1] + 0.01:  # below the open floor: only the entrance walkway
+                        self.assertLess(px, layout.COUNTER_X_MIN - 1.0)
+
+    def test_paths_connect_and_set_walking_times(self):
+        for c in self.customers:
+            self.assertEqual(len(c.paths), len(c.visits) + 1)
+            self.assertEqual(c.paths[0][0], layout.ENTRANCE)
+            self.assertEqual(c.paths[-1][-1], layout.CHECKOUT_POINT)
+            for i, visit in enumerate(c.visits):
+                self.assertEqual(c.paths[i][-1], visit.spot)
+                self.assertEqual(c.paths[i + 1][0], visit.spot)
+                self.assertIn(visit.spot[1], layout.AISLE_ROWS)
+                length = layout.path_length(c.paths[i])
+                self.assertAlmostEqual(visit.walk_in_time, length / (60 * c.walk_speed), places=12)
+                start = c.paths[i][0]
+                self.assertGreaterEqual(length + 1e-9, layout.distance(start, visit.spot))
+            self.assertAlmostEqual(
+                c.walk_to_checkout, layout.path_length(c.paths[-1]) / (60 * c.walk_speed), places=12
+            )
+
+    def test_route_examples(self):
+        back, middle, front = layout.AISLE_ROWS
+        # Same aisle row: aisles line up across sections, so the walk is straight
+        a, b = (5.0, back), (24.0, back)
+        self.assertEqual(layout.route(a, b), [a, b])
+        # Change of row at a cross-aisle between the two points: Manhattan distance
+        a, b = (6.0, middle), (24.0, back)
+        path = layout.route(a, b)
+        self.assertAlmostEqual(layout.path_length(path), 18.0 + (middle - back))
+        self.assertEqual(path[1][0], 20.0)  # turns at the cross-aisle next to the target section
+        # Back aisle to the checkout: along the aisle, down a cross-aisle, across the open floor
+        path = layout.route((32.0, back), layout.CHECKOUT_POINT)
+        self.assertEqual(path[:3], [(32.0, back), (29.0, back), (29.0, front)])
+        self.assertEqual(path[-1], layout.CHECKOUT_POINT)
+        # Front aisle opens onto the main aisle: straight to the checkout
+        self.assertEqual(layout.route((34.0, front), layout.CHECKOUT_POINT), [(34.0, front), layout.CHECKOUT_POINT])
+
+    def test_spots_do_not_change_other_random_draws(self):
+        def draws(customers):
+            return [(c.arrival_time, c.items, c.walk_speed, c.service_time,
+                     tuple((v.section, v.items, v.shop_time) for v in c.visits)) for c in customers]
+
+        cfg = replace(BASE, duration=60)
+        with mock.patch("simulation.customers.PLACEMENT_STREAM", 7):
+            other = generate_customers(cfg)
+        this = generate_customers(cfg)
+        self.assertEqual(draws(this), draws(other))
+        self.assertNotEqual([v.spot for c in this for v in c.visits], [v.spot for c in other for v in c.visits])
+
+    def test_trace_routes_and_decisions(self):
+        for key in STRATEGIES:
+            result = run_simulation(BASE, key, record_decisions=True)
+            trace = build_trace(result)
+            express = {c["index"] for c in trace["counters"] if c["type"] == "express"}
+            for c in trace["customers"]:
+                self.assertEqual(len(c["p"]), len(c["legs"]) + 1)
+                self.assertEqual(c["p"][0][0], list(layout.ENTRANCE))
+                if c["co"] is None:
+                    self.assertIsNone(c["seen"])
+                    continue
+                seen = c["seen"]
+                self.assertEqual(len(seen), BASE.num_counters)
+                if key == "shortest_wait":
+                    best = min(range(len(seen)), key=lambda i: (seen[i][1], i))
+                    self.assertAlmostEqual(seen[c["c"]][1], seen[best][1], places=2)
+                else:
+                    eligible = range(len(seen))
+                    if key == "express" and express:
+                        eligible = [i for i in eligible if (i in express) == (c["items"] <= trace["express_limit"])]
+                    self.assertEqual(c["c"], min(eligible, key=lambda i: (seen[i][0], i)))
+                # Somebody who saw an empty counter and joined it started service at once
+                if seen[c["c"]][0] == 0:
+                    self.assertEqual(c["ss"], c["co"])
 
 
 class TestStatistics(unittest.TestCase):

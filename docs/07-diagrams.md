@@ -34,13 +34,14 @@ Word or Google document, or opened in any browser.
 
 ![Store layout and customer route](diagrams/01-store-layout.svg)
 
-The simulated supermarket drawn to scale: four sections along the back, the checkout lanes at the front, and the route one customer takes from the entrance to the exit. The animation and the walking times use exactly these coordinates.
+The simulated supermarket drawn to scale: four sections along the back with their shelving, the checkout lanes at the front, the walkways customers use, and the route one customer takes from the entrance to the exit. The engine measures walking on exactly these walkways, and the animation follows the same routes.
 
 How to read it:
 
-- Numbered blue stops follow one customer who buys from all four sections.
-- The diamond is where the strategy chooses a counter; the queue for each counter forms in its lane.
-- Walking time between two points is the straight-line distance divided by the customer's walking speed.
+- Shelving blocks the way: customers walk along an aisle, change aisle only at a cross-aisle, and cross the open main aisle to reach the checkouts.
+- Numbered blue stops are the customer's shopping spots, one in each section they buy from, in store order.
+- Walking time is the length of the route divided by the customer's walking speed.
+- The diamond is where the strategy chooses a counter; each counter's queue forms in its lane. The dashed walk out after paying is drawn only.
 
 ### 2. System overview
 

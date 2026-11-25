@@ -1,7 +1,7 @@
 import {
   Alert, Anchor, Badge, Button, Group, SegmentedControl, Stack, Tabs, Text, Tooltip,
 } from '@mantine/core'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, runChartUrl, runCsvUrl } from '../api'
 import type { BasketKey, Meta, Params, Run, StrategyKey, Trace } from '../api'
 import { BarsCI, Histogram } from '../charts/Bars'
@@ -9,7 +9,8 @@ import { ChartCard } from '../charts/ChartCard'
 import { StepChart, maxOf } from '../charts/StepChart'
 import { niceMax } from '../charts/core'
 import { CustomerLog } from '../components/CustomerLog'
-import { IconDownload, IconEnd, IconPause, IconPlay, IconReset, IconSliders } from '../components/Icons'
+import { FigureIcon, JourneyPanel } from '../components/JourneyPanel'
+import { IconClose, IconDownload, IconEnd, IconPause, IconPlay, IconReset, IconRoute, IconSliders } from '../components/Icons'
 import { EmptyState, MeasureSheet, PageHeader, Panel, Swatch } from '../components/Page'
 import { ParameterPanel } from '../components/ParameterPanel'
 import {
@@ -18,6 +19,7 @@ import {
 import { num, validateParams } from '../model'
 import { Scrubber } from '../sim/Scrubber'
 import { StoreCanvas } from '../sim/StoreCanvas'
+import { statusAt } from '../sim/journey'
 import { prepare, snapshot } from '../sim/playback'
 import type { Snapshot } from '../sim/playback'
 import { usePlayback } from '../sim/usePlayback'
@@ -33,7 +35,15 @@ interface Props {
   onRunCreated: (id: number) => void
 }
 
-const SPEEDS = [1, 5, 10, 20, 60]
+// Simulated time shown per real second. The slow settings make one customer easy to follow.
+const SPEEDS: { value: number; label: string }[] = [
+  { value: 0.05, label: '3 s' },
+  { value: 0.25, label: '15 s' },
+  { value: 1, label: '1 min' },
+  { value: 5, label: '5 min' },
+  { value: 20, label: '20 min' },
+  { value: 60, label: '1 h' },
+]
 
 /** An empty store drawn from the current parameters, shown before the first run. */
 function previewTrace(meta: Meta, params: Params, strategy: StrategyKey): Trace {
@@ -45,6 +55,8 @@ function previewTrace(meta: Meta, params: Params, strategy: StrategyKey): Trace 
     : Array.from({ length: n }, (_, i) => [x_min + (i * (x_max - x_min)) / (n - 1), y])
   return {
     duration: 1,
+    strategy,
+    express_limit: 5,
     layout: { ...meta.layout, counters },
     counters: counters.map((_, i) => ({ index: i, type: i < express ? 'express' : 'normal' })),
     customers: [],
@@ -83,6 +95,10 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
   const [error, setError] = useState<string | null>(null)
   const [showParams, setShowParams] = useState(true)
   const [tab, setTab] = useState<string | null>('queues')
+  const [tracedId, setTracedId] = useState<number | null>(null)
+  const [dimOthers, setDimOthers] = useState(true)
+  const floorRef = useRef<HTMLDivElement>(null)
+  const journeyRef = useRef<HTMLDivElement>(null)
   const errors = useMemo(() => validateParams(params, meta), [params, meta])
   const duration = run?.metrics.duration ?? (num(params, 'duration') || 240)
   const pb = usePlayback(duration)
@@ -93,7 +109,7 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
     setLoading(true)
     setError(null)
     api.run(runId)
-      .then((r) => { if (!cancelled) { setRun(r); pb.reset() } })
+      .then((r) => { if (!cancelled) { setRun(r); setTracedId(null); pb.reset() } })
       .catch((e: Error) => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -106,6 +122,7 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
     try {
       const r = await api.createRun(strategy, params)
       setRun(r)
+      setTracedId(null)
       onRunCreated(r.id)
       pb.play()
     } catch (e) {
@@ -122,6 +139,34 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
     () => (trace && prepared ? snapshot(prepared, trace, pb.time) : null),
     [trace, prepared, pb.time],
   )
+  const traced = useMemo(() => {
+    if (!trace || tracedId === null) return null
+    const guess = trace.customers[tracedId - 1]
+    return guess?.id === tracedId ? guess : (trace.customers.find((c) => c.id === tracedId) ?? null)
+  }, [trace, tracedId])
+
+  // Trace a customer; if they are not in the store at the current time, jump to their arrival
+  const { seek, timeRef } = pb
+  const traceCustomer = useCallback((id: number, opts: { scroll?: boolean } = {}) => {
+    if (!trace) return
+    const c = trace.customers[id - 1]?.id === id ? trace.customers[id - 1] : trace.customers.find((o) => o.id === id)
+    if (!c) return
+    setTracedId(c.id)
+    const t = timeRef.current ?? 0
+    const leaves = c.d ?? trace.duration
+    if (t < c.a || t > leaves + 0.5) seek(c.a)
+    if (opts.scroll) floorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [trace, seek, timeRef])
+
+  useEffect(() => {
+    if (tracedId === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTracedId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tracedId])
+
   const m = run?.metrics
   const ts = run?.timeseries
   const playhead = pb.state === 'idle' ? null : pb.time
@@ -143,14 +188,14 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
         <Button size="xs" variant="default" leftSection={<IconEnd size={14} />} onClick={pb.skipToEnd}>Jump to end</Button>
       </Group>
       <Group gap={8}>
-        <Tooltip label="Simulated minutes that pass in one real second">
-          <Text size="xs" c="var(--ink-2)">Speed</Text>
+        <Tooltip label="Simulated time played in one real second. Use 3 s or 15 s to follow one customer step by step.">
+          <Text size="xs" c="var(--ink-2)">Each second plays</Text>
         </Tooltip>
         <SegmentedControl
           value={String(pb.speed)}
           onChange={(v) => pb.setSpeed(Number(v))}
-          data={SPEEDS.map((s) => ({ value: String(s), label: `${s}x` }))}
-          aria-label="Playback speed in simulated minutes per second"
+          data={SPEEDS.map((s) => ({ value: String(s.value), label: s.label }))}
+          aria-label="Simulated time played per real second"
         />
       </Group>
     </Group>
@@ -211,31 +256,67 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
             </Group>
           )}
 
-          <div className="panel" style={{ padding: 16, minWidth: 0 }}>
-            <StoreCanvas trace={trace ?? preview} timeRef={pb.timeRef} sectionLabels={meta.sections} />
-            <Group gap={16} mt={10} wrap="wrap">
+          <div className="panel" style={{ padding: 16, minWidth: 0, scrollMarginTop: 68 }} ref={floorRef}>
+            <StoreCanvas
+              trace={trace ?? preview} timeRef={pb.timeRef} sectionLabels={meta.sections}
+              tracedId={traced ? traced.id : null} dimOthers={dimOthers}
+              onSelect={trace ? (id) => traceCustomer(id) : undefined}
+            />
+            <Group gap={18} mt={10} wrap="wrap" align="center">
               {(['small', 'medium', 'large'] as BasketKey[]).map((k) => (
                 <Group key={k} gap={6} wrap="nowrap">
-                  <span style={{ width: 9 + (k === 'large' ? 4 : k === 'medium' ? 2 : 0), height: 9 + (k === 'large' ? 4 : k === 'medium' ? 2 : 0), borderRadius: 20, background: BASKET_COLOURS[k] }} />
+                  <FigureIcon cat={k} size={22} />
                   <Text size="xs" c="var(--ink-2)">{BASKET_LABELS[k]}</Text>
                 </Group>
               ))}
               <Group gap={6} wrap="nowrap">
-                <span style={{ width: 11, height: 11, borderRadius: 20, background: '#ffffff', border: `2px solid ${tokens.ink}` }} />
-                <Text size="xs" c="var(--ink-2)">Dark ring: being served</Text>
+                <FigureIcon cat="small" size={22} serving />
+                <Text size="xs" c="var(--ink-2)">Ring: being served</Text>
               </Group>
               <Group gap={6} wrap="nowrap">
                 <span style={{ width: 14, height: 10, borderRadius: 2, background: tokens.ink }} />
                 <Text size="xs" c="var(--ink-2)">Dark lane number: cashier busy</Text>
               </Group>
+              {trace && !traced && (
+                <Text size="xs" className="trace-hint">
+                  <IconRoute size={14} />Click a customer to trace their route
+                </Text>
+              )}
             </Group>
+            {trace && traced && (
+              <div className="trace-bar">
+                <Group gap={8} wrap="nowrap" miw={0}>
+                  <span style={{ color: tokens.series, display: 'flex', flex: 'none' }}><IconRoute size={16} /></span>
+                  <Text size="sm" fw={600} style={{ flex: 'none' }}>Customer {traced.id}</Text>
+                  <Text size="sm" c="var(--ink-2)" truncate>{statusAt(trace, traced, pb.time, meta.sections)}</Text>
+                </Group>
+                <Group gap={4} wrap="nowrap" style={{ flex: 'none' }}>
+                  <Tooltip label="Play this customer's visit from their arrival, at 15 simulated seconds per second">
+                    <Button size="compact-sm" variant="subtle" color="ink" leftSection={<IconPlay size={13} />}
+                      onClick={() => { pb.setSpeed(0.25); pb.seek(Math.max(0, traced.a - 0.05)); pb.resume() }}>
+                      Replay visit
+                    </Button>
+                  </Tooltip>
+                  <Button size="compact-sm" variant="subtle" color="ink"
+                    onClick={() => journeyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                    Journey details
+                  </Button>
+                  <Button size="compact-sm" variant="subtle" color="ink" leftSection={<IconClose size={13} />} onClick={() => setTracedId(null)}>
+                    Stop tracing
+                  </Button>
+                </Group>
+              </div>
+            )}
             {run && trace && ts && (
               <>
                 {transport}
                 <div style={{ marginTop: 10 }}>
-                  <Scrubber duration={duration} time={pb.time} waiting={ts.waiting} onSeek={pb.seek} onScrubStart={pb.pause} />
+                  <Scrubber
+                    duration={duration} time={pb.time} waiting={ts.waiting} onSeek={pb.seek} onScrubStart={pb.pause}
+                    band={traced ? { start: traced.a, end: traced.d ?? duration, label: `Customer ${traced.id} in the store` } : null}
+                  />
                   <Text size="xs" c="var(--ink-3)" mt={2}>
-                    The shading behind the timeline is the number of customers waiting. Drag, click or use the arrow keys to move through the day.
+                    The shading behind the timeline is the number of customers waiting.{traced ? ` The blue band is customer ${traced.id}'s time in the store.` : ''} Drag, click or use the arrow keys to move through the day.
                   </Text>
                 </div>
                 {live && <LiveStrip live={live} time={pb.time} duration={duration} />}
@@ -254,6 +335,18 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
               </Text>
             )}
           </div>
+
+          {run && trace && traced && (
+            <div ref={journeyRef} style={{ scrollMarginTop: 68 }}>
+              <JourneyPanel
+                trace={trace} customer={traced} time={pb.time} labels={meta.sections}
+                dimOthers={dimOthers} onDimOthers={setDimOthers}
+                onSeek={pb.seek}
+                onStep={(dir) => traceCustomer(traced.id + dir)}
+                onClose={() => setTracedId(null)}
+              />
+            </div>
+          )}
 
           {!run && !loading && (
             <EmptyState title="No results yet">
@@ -449,7 +542,12 @@ export function SimulationPage({ meta, params, setParams, strategy, setStrategy,
                 </Tabs.Panel>
 
                 <Tabs.Panel value="log" pt="md">
-                  {trace ? <CustomerLog trace={trace} sectionLabels={meta.sections} /> : (
+                  {trace ? (
+                    <CustomerLog
+                      trace={trace} sectionLabels={meta.sections} tracedId={tracedId}
+                      onTrace={(id) => traceCustomer(id, { scroll: true })}
+                    />
+                  ) : (
                     <Text size="sm" c="var(--ink-2)">This run is too large to list here. Download the customer data as CSV instead.</Text>
                   )}
                 </Tabs.Panel>

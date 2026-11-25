@@ -46,6 +46,9 @@ class CustomerRecord:
     counter: int | None = None
     service_start: float | None = None
     departure: float | None = None
+    # What the customer saw at the checkout: (people at the counter, estimated
+    # wait in minutes) for every counter. Only kept when decisions are recorded.
+    seen: list[tuple[int, float]] | None = None
 
     @property
     def state_at_end(self) -> str:
@@ -133,9 +136,11 @@ class Simulation:
         config: SimulationConfig,
         strategy: Strategy | str,
         customers: list[CustomerProfile] | None = None,
+        record_decisions: bool = False,
     ):
         config.validate()
         self.config = config
+        self.record_decisions = record_decisions
         self.strategy = (
             get_strategy(strategy) if isinstance(strategy, str) else strategy
         )
@@ -250,6 +255,10 @@ class Simulation:
     def _on_checkout_arrive(self, cid: int) -> None:
         rec = self.records[cid]
         rec.checkout_arrival = self.clock
+        if self.record_decisions:
+            rec.seen = [
+                (c.customers_present, c.estimated_wait(self.clock)) for c in self.counters
+            ]
         index = self.strategy.choose(rec.profile, self.counters, self.clock)
         rec.counter = index
         counter = self.counters[index]
@@ -290,5 +299,8 @@ def run_simulation(
     config: SimulationConfig,
     strategy: str,
     customers: list[CustomerProfile] | None = None,
+    record_decisions: bool = False,
 ) -> SimulationResult:
-    return Simulation(config, strategy, customers).run()
+    """Run one strategy. record_decisions keeps what each customer saw at the
+    checkout (for the trace); comparisons leave it off to save time."""
+    return Simulation(config, strategy, customers, record_decisions).run()

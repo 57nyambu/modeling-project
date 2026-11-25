@@ -145,6 +145,25 @@ export function IconChevron({ size = 16, dir = 'right' }: IconProps & { dir?: 'l
   )
 }
 
+export function IconClose({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M5 5l10 10M15 5L5 15" />
+    </svg>
+  )
+}
+
+/** A route with numbered stops, for tracing one customer. */
+export function IconRoute({ size = 16 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="5" cy="5" r="2" />
+      <circle cx="15" cy="15" r="2" />
+      <path d="M7 5h5.5a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 0 0 5H13" />
+    </svg>
+  )
+}
+
 export function IconInfo({ size = 14 }: IconProps) {
   return (
     <svg {...base(size)}>

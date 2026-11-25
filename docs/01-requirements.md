@@ -40,14 +40,14 @@ application exists to generate, run, visualise and analyse simulation results.
 | FR1 | The system shall generate customer arrivals as a Poisson process with a user-set rate. |
 | FR2 | Each customer shall receive a basket category (Small 1–5, Medium 6–15, Large 16+) and an item count. |
 | FR3 | Customers shall visit the sections that contain their items, in store-route order, spending a random time per item. |
-| FR4 | Customers shall walk between locations; walking time = distance / walking speed. |
+| FR4 | Customers shall walk between locations along the store's walkways (aisles, cross-aisles and the main aisle), never through shelving; walking time = route length / walking speed. |
 | FR5 | On reaching the checkout area, a customer shall pick a counter using the selected strategy and join its FIFO queue. |
 | FR6 | Service time shall depend on the number of items (scanning) plus a random payment time. |
 | FR7 | The system shall implement Shortest Queue, Shortest Estimated Waiting Time and Express/Normal strategies. |
 | FR8 | Strategy comparisons shall use identical customer streams (same seed, same pre-generated customers). |
 | FR9 | The system shall compute all measures listed in section 1.6. |
 | FR10 | The user shall set parameters, choose a strategy, and Start, Pause, Resume and Reset the visual run. |
-| FR11 | The application shall show a 2D store layout with moving customers and visible queues. |
+| FR11 | The application shall show a 2D store layout with moving customers (person figures) and visible queues, and let the user trace one customer's route, timeline and counter choice. |
 | FR12 | The application shall show performance charts and a three-strategy comparison dashboard. |
 | FR13 | Completed runs and comparisons shall be stored in SQLite and be retrievable. |
 

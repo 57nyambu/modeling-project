@@ -8,9 +8,10 @@ import numpy as np
 import pandas as pd
 
 from . import layout
+from .config import EXPRESS_ITEM_LIMIT
 from .engine import SimulationResult
 
-RESULT_SCHEMA = 2  # bump when the shape of metrics/time series changes (stored runs are upgraded)
+RESULT_SCHEMA = 3  # bump when the shape of metrics/time series changes (stored runs are upgraded)
 EPS = 1e-9  # waits shorter than this count as "did not wait"
 MAX_SERIES_POINTS = 4000  # above this a step series is reduced to a peak-preserving envelope
 
@@ -224,10 +225,21 @@ def time_series(result: SimulationResult) -> dict:
 
 
 def build_trace(result: SimulationResult) -> dict:
-    """Compact per-customer timeline for the 2D animation (replayed in the browser)."""
+    """Compact per-customer timeline for the 2D animation (replayed in the browser).
+
+    Per customer: a arrival, legs [section, arrive, depart, items] for the full
+    planned route (times are null for sections not reached by the end of the
+    run), p the walking routes (one into each section, then one to the
+    checkout), v walking speed (m/s), co checkout arrival, c counter index,
+    ss service start, d departure and seen, what the customer saw at the
+    checkout: [people at the counter, estimated wait] for every counter.
+    """
 
     def r3(x):
         return None if x is None else round(float(x), 3)
+
+    def pt(p):
+        return [round(float(p[0]), 2), round(float(p[1]), 2)]
 
     customers = []
     for rec in result.customers:
@@ -236,23 +248,28 @@ def build_trace(result: SimulationResult) -> dict:
             "id": p.id,
             "cat": p.category,
             "items": p.items,
+            "v": round(p.walk_speed, 3),
             "a": r3(p.arrival_time),
-            # Full planned route; times are null for sections not reached by the end of the run
             "legs": [
                 [
                     v.section,
                     r3(rec.section_times[i][0]) if i < len(rec.section_times) else None,
                     r3(rec.section_times[i][1]) if i < len(rec.section_times) else None,
+                    v.items,
                 ]
                 for i, v in enumerate(p.visits)
             ],
+            "p": [[pt(q) for q in path] for path in p.paths],
             "co": r3(rec.checkout_arrival),
             "c": rec.counter,
             "ss": r3(rec.service_start),
             "d": r3(rec.departure),
+            "seen": None if rec.seen is None else [[n, r3(w)] for n, w in rec.seen],
         })
     return {
         "duration": result.config.duration,
+        "strategy": result.strategy_key,
+        "express_limit": EXPRESS_ITEM_LIMIT,
         "layout": layout.layout_dict(result.config.num_counters),
         "counters": [{"index": c.index, "type": "express" if c.express else "normal"}
                      for c in result.counters],

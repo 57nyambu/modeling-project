@@ -1,6 +1,6 @@
-import type { Meta, Params } from '../api'
+import type { Meta, Params, Point } from '../api'
 import { num } from '../model'
-import { DESK, DOOR_WIDTH, HEADER_DEPTH, aisles, gondolas } from '../sim/floorplan'
+import { DESK, DOOR_WIDTH, LANE_LENGTH, SERVICE_OFFSET } from '../sim/floorplan'
 import { Arrow, Box, DC, Diagram, Frame, KindLegend, Label, Step, T, Wrap } from './kit'
 
 export interface DiagramProps {
@@ -25,34 +25,31 @@ export function StoreLayoutDiagram({ meta, params }: DiagramProps) {
   const oy = 64
   const X = (m: number) => ox + m * s
   const Y = (m: number) => oy + m * s
-  const route: [string, [number, number]][] = []
-  const mid = (k: string) => {
-    const r = L.sections[k]
-    return [r.x + r.w / 2, aisles(r)[1]] as [number, number]
-  }
-  route.push(['entrance', L.entrance])
-  for (const k of ['grocery', 'beverages', 'household', 'personal_care']) route.push([k, mid(k)])
-  route.push(['decision', L.checkout_point])
-  const target = Math.min(1, n - 1)
-  const [tx, ty] = counters[target]
-  route.push(['queue', [tx, ty - 1 - 0.9]])
-  route.push(['service', [tx, ty - 1]])
-  route.push(['exit', L.exit])
-  const pts = route.map(([, p]) => [X(p[0]), Y(p[1])] as [number, number])
+  const P = (p: Point): [number, number] => [X(p[0]), Y(p[1])]
   const half = DOOR_WIDTH / 2
   const doors = [L.entrance[0], L.exit[0]].sort((a, b) => a - b)
+  const rows = L.aisle_rows
+  const cross = L.cross_aisles
+  // The engine's example route, then the drawn-only walk into a lane and out of the store
+  const route = meta.example_route
+  const target = Math.min(1, n - 1)
+  const [tx, ty] = counters[target]
+  const service: Point = [tx, ty - SERVICE_OFFSET]
+  const laneOpen: Point = [tx, ty - SERVICE_OFFSET - LANE_LENGTH - 0.2]
+  const exitWalk: Point[] = [service, [tx, L.exit_walk_y], [L.exit[0], L.exit_walk_y], [L.exit[0], L.height + 0.2]]
+  const lastStop = route.stops[route.stops.length - 1]?.point ?? L.checkout_point
   const notes = [
     ['Enter', 'Customers arrive at random through the entrance.'],
-    ['Walk to the first section', 'Walking time = distance / walking speed.'],
-    ['Shop', 'Pick items in each section on the route, in store order.'],
+    ['Walk along the walkways', 'Shortest path on the walkways. Time = route length / speed.'],
+    ['Shop', 'Pick items at one spot in each section on the route.'],
     ['Walk to the checkouts', 'Only sections with items in the basket are visited.'],
     ['Choose a counter', 'The checkout strategy picks one counter here.'],
     ['Queue', 'Each counter has its own first-in, first-out queue.'],
-    ['Pay and leave', 'Service = scan every item + pay, then exit.'],
+    ['Pay and leave', 'Service = scan every item + pay, then walk out.'],
   ]
 
   return (
-    <Diagram width={1140} height={660} title="Store layout and customer route" desc="Floor plan of the simulated supermarket with the route a customer takes from the entrance through the four sections to a checkout counter and the exit.">
+    <Diagram width={1140} height={680} title="Store layout and customer route" desc="Floor plan of the simulated supermarket with its walkways and the route one customer takes from the entrance along the aisles to three sections, a checkout counter and the exit.">
       {/* dimensions */}
       <line x1={X(0)} x2={X(L.width)} y1={oy - 22} y2={oy - 22} stroke={DC.ink3} />
       <line x1={X(0)} x2={X(0)} y1={oy - 28} y2={oy - 16} stroke={DC.ink3} />
@@ -68,15 +65,22 @@ export function StoreLayoutDiagram({ meta, params }: DiagramProps) {
       {Object.entries(L.sections).map(([k, r]) => (
         <g key={k}>
           <rect x={X(r.x)} y={Y(r.y)} width={r.w * s} height={r.h * s} fill="#f6f8fa" stroke="#d5dbe2" />
-          {gondolas(r).map((g, i) => <rect key={i} x={X(g.x)} y={Y(g.y)} width={g.w * s} height={g.h * s} fill="#dfe4ea" />)}
-          <T x={X(r.x + 0.6)} y={Y(r.y + HEADER_DEPTH / 2) + 4} weight={600} size={12}>{meta.sections[k]}</T>
+          {(L.shelves[k] ?? []).map((g, i) => <rect key={i} x={X(g.x)} y={Y(g.y)} width={g.w * s} height={g.h * s} fill="#dfe4ea" />)}
+          <T x={X(r.x + 0.6)} y={Y(r.y + L.header_depth / 2) + 4} weight={600} size={12}>{meta.sections[k]}</T>
         </g>
       ))}
+      {/* walkways: aisle rows, cross-aisles and the entrance walkway */}
+      <g stroke="#b9c4d1" strokeWidth={1.2} strokeDasharray="2 4" fill="none">
+        {rows.map((y) => <line key={y} x1={X(cross[0])} x2={X(cross[cross.length - 1])} y1={Y(y)} y2={Y(y)} />)}
+        {cross.map((x) => <line key={x} x1={X(x)} x2={X(x)} y1={Y(rows[0])} y2={Y(rows[rows.length - 1])} />)}
+        <line x1={X(L.entrance[0])} x2={X(L.entry_turn[0])} y1={Y(L.entrance[1])} y2={Y(L.entry_turn[1])} />
+      </g>
+      <T x={X(5.2)} y={Y(11.2)} size={11} colour={DC.ink3}>Main aisle (open floor)</T>
       {/* checkout lanes */}
       {counters.map(([cx, cy], i) => (
         <g key={i}>
-          <line x1={X(cx - 0.55)} x2={X(cx - 0.55)} y1={Y(cy - 7.9)} y2={Y(cy + 0.6)} stroke="#d3d9e0" />
-          <line x1={X(cx + 0.55)} x2={X(cx + 0.55)} y1={Y(cy - 7.9)} y2={Y(cy + 0.6)} stroke="#d3d9e0" />
+          <line x1={X(cx - 0.55)} x2={X(cx - 0.55)} y1={Y(cy - SERVICE_OFFSET - LANE_LENGTH)} y2={Y(cy + 0.6)} stroke="#d3d9e0" />
+          <line x1={X(cx + 0.55)} x2={X(cx + 0.55)} y1={Y(cy - SERVICE_OFFSET - LANE_LENGTH)} y2={Y(cy + 0.6)} stroke="#d3d9e0" />
           <rect x={X(cx + DESK.dx)} y={Y(DESK.top)} width={DESK.w * s} height={(cy + 0.6 - DESK.top) * s} fill="#e9edf2" stroke="#c9d0d8" />
           <rect x={X(cx + DESK.dx + 0.12)} y={Y(cy - 0.25)} width={(DESK.w - 0.24) * s} height={0.7 * s} fill="#2d3d50" />
           <rect x={X(cx + DESK.dx + DESK.w / 2 - 0.62)} y={Y(DESK.top - 0.95)} width={1.25 * s} height={0.8 * s} rx={3} fill="#ffffff" stroke="#aab3bd" />
@@ -90,36 +94,47 @@ export function StoreLayoutDiagram({ meta, params }: DiagramProps) {
         fill="none" stroke="#2d3d50" strokeWidth={3.2}
       />
       <T x={X(L.entrance[0])} y={Y(L.height) + 18} anchor="middle" size={11.5} colour={DC.ink2}>Entrance</T>
-      <T x={X(L.exit[0])} y={Y(L.height) + 18} anchor="middle" size={11.5} colour={DC.ink2}>Exit</T>
+      <T x={X(L.exit[0]) + 30} y={Y(L.height) + 18} anchor="middle" size={11.5} colour={DC.ink2}>Exit</T>
       {/* decision point */}
       <path d={`M${X(L.checkout_point[0])},${Y(L.checkout_point[1]) - 9}l9,9l-9,9l-9,-9z`} fill="#fff7e0" stroke="#e0b43c" strokeWidth={1.3} />
 
-      {/* route */}
-      <Arrow points={pts.slice(0, 6)} accent />
-      <Arrow points={[pts[5], [pts[6][0], pts[5][1] + 40], pts[6]]} accent />
-      <Arrow points={[pts[7], [X(L.exit[0]), pts[7][1]], pts[8]]} accent />
-      {pts.map((p, i) => i === 0 || i === 8 ? null : (
-        <circle key={i} cx={p[0]} cy={p[1]} r={4} fill={DC.series} stroke="#ffffff" strokeWidth={2} />
+      {/* route: engine walks, then the drawn-only walk into the lane and out */}
+      {route.paths.map((path, i) => <Arrow key={i} points={path.map(P)} accent />)}
+      <Arrow points={[P(L.checkout_point), P(laneOpen), P(service)]} accent />
+      <Arrow points={exitWalk.map(P)} accent dashed />
+      {route.stops.map((stop, i) => (
+        <g key={stop.section}>
+          <circle cx={X(stop.point[0])} cy={Y(stop.point[1])} r={8} fill={DC.series} stroke="#ffffff" strokeWidth={2} />
+          <text x={X(stop.point[0])} y={Y(stop.point[1]) + 3.8} fontSize={10} fontWeight={600} fill="#ffffff" textAnchor="middle">{i + 1}</text>
+        </g>
       ))}
-      <Step x={pts[0][0] + 22} y={pts[0][1] - 18} n={1} />
-      <Step x={pts[1][0] - 18} y={pts[1][1] + 22} n={2} />
-      <Step x={pts[2][0]} y={pts[2][1] - 22} n={3} />
-      <Step x={pts[4][0] + 20} y={pts[4][1] + 24} n={4} />
-      <Step x={pts[5][0] + 24} y={pts[5][1] - 16} n={5} />
-      <Step x={pts[6][0] - 26} y={pts[6][1]} n={6} />
-      <Step x={pts[8][0] - 24} y={pts[8][1] - 30} n={7} />
+      <circle cx={X(service[0])} cy={Y(service[1])} r={4} fill={DC.series} stroke="#ffffff" strokeWidth={2} />
+      <Step x={X(L.entrance[0]) + 24} y={Y(L.entrance[1]) - 12} n={1} />
+      <Step x={X(L.entrance[0]) + 22} y={Y(17)} n={2} />
+      <Step x={X(route.stops[0]?.point[0] ?? 6) + 2} y={Y(route.stops[0]?.point[1] ?? 6) + 26} n={3} />
+      <Step x={X((lastStop[0] + L.checkout_point[0]) / 2) + 6} y={Y((lastStop[1] + L.checkout_point[1]) / 2) + 22} n={4} />
+      <Step x={X(L.checkout_point[0]) + 24} y={Y(L.checkout_point[1]) + 6} n={5} />
+      <Step x={X(service[0]) - 26} y={Y(service[1] - 3)} n={6} />
+      <Step x={X(L.exit[0]) - 26} y={Y(L.exit_walk_y) - 18} n={7} />
 
       {/* annotations */}
       <T x={890} y={80} weight={600} size={13.5}>One customer's journey</T>
       {notes.map(([head, body], i) => (
         <g key={i}>
-          <Step x={900} y={112 + i * 56} n={i + 1} />
-          <T x={918} y={116 + i * 56} weight={600} size={12.5}>{head}</T>
-          <Wrap x={918} y={134 + i * 56} width={205} text={body} />
+          <Step x={900} y={112 + i * 60} n={i + 1} />
+          <T x={918} y={116 + i * 60} weight={600} size={12.5}>{head}</T>
+          <Wrap x={918} y={134 + i * 60} width={205} text={body} />
         </g>
       ))}
-      <rect x={884} y={512} width={236} height={66} rx={8} fill="#f6f8fa" stroke="#e2e6eb" />
-      <Wrap x={898} y={536} width={210} text="Sections have unlimited room, so nobody queues to shop. The only queues are at the counters." />
+      <g>
+        <line x1={886} x2={912} y1={548} y2={548} stroke="#b9c4d1" strokeWidth={1.4} strokeDasharray="2 4" />
+        <Wrap x={920} y={552} width={200} text="Walkways. Shelving blocks the way, so customers change aisle only at a cross-aisle." />
+        <line x1={886} x2={912} y1={600} y2={600} stroke={DC.series} strokeWidth={1.8} />
+        <Wrap x={920} y={604} width={200} text="Route from the engine. Dashed: the walk out, drawn only." />
+        <circle cx={899} cy={646} r={8} fill={DC.series} />
+        <text x={899} y={649.8} fontSize={10} fontWeight={600} fill="#ffffff" textAnchor="middle">1</text>
+        <Wrap x={920} y={650} width={200} text="Shopping spots, in the order visited." />
+      </g>
     </Diagram>
   )
 }

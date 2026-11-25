@@ -27,12 +27,17 @@ Two different questions:
 | Long-run series | The envelope used for very long runs keeps the largest queue |
 | Peak arrivals | λ(t) averages to λ; thinning reproduces the expected total and puts more arrivals mid-run |
 | Input checks | Unknown profiles, fractional seeds and malformed section shares are rejected |
+| Walkways | Aisles lie between the shelving; every route stays inside the store and never crosses shelving or a checkout lane |
+| Routes and walking times | Routes join up from the entrance through each shopping spot to the checkout; each walking time equals route length / (60 v) |
+| Route examples | Hand-checked routes: straight along one aisle, a turn at a cross-aisle (Manhattan distance), out of a back aisle to the checkouts |
+| Separate spot stream | Changing the shopping-spot stream leaves arrivals, baskets, pick and service times unchanged |
+| Recorded decisions | For every strategy, the counter chosen agrees with the queue lengths and estimates the customer saw |
 
 Django API tests (`api/simulator/tests.py`) cover run creation, every chart, both
 CSV exports, comparisons, the midday-peak profile, rejection of invalid input, and
 the automatic upgrade of results saved by an older version of the engine.
 
-There are 26 engine tests and 6 API tests.
+There are 32 engine tests and 6 API tests.
 
 Run them (PowerShell, inside `api` with the virtual environment active):
 
@@ -74,14 +79,14 @@ Run these in the application and confirm the direction of change makes sense:
 
 | Strategy | Avg wait (min) | Max queue | Utilisation |
 |---|---|---|---|
-| Shortest Queue | 0.273 ± 0.030 | 2.10 ± 0.23 | 58.0% |
-| Shortest Estimated Waiting Time | 0.226 ± 0.026 | 2.30 ± 0.35 | 58.0% |
-| Express and Normal (1 express) | 1.471 ± 0.309 | 8.60 ± 2.34 | 57.9% |
+| Shortest Queue | 0.274 ± 0.025 | 2.10 ± 0.23 | 58.0% |
+| Shortest Estimated Waiting Time | 0.225 ± 0.026 | 2.30 ± 0.35 | 58.0% |
+| Express and Normal (1 express) | 1.469 ± 0.304 | 8.70 ± 2.26 | 57.9% |
 
-SEWT is significantly better than SQ (paired difference −0.047 min, 95% CI
-−0.059 to −0.035). With one express counter out of four, the express counter
+SEWT is significantly better than SQ (paired difference −0.049 min, 95% CI
+−0.058 to −0.041). With one express counter out of four, the express counter
 receives 45% of customers (expected load 0.63 × 1.32 ≈ 0.83; 78% busy in the
 seed-42 run), so small-basket customers wait about 3 minutes while normal
 counters sit partly idle. With 2 express counters the express strategy's average
-wait falls to 0.986 ± 0.184 min but is still worse than SQ and SEWT: splitting
+wait falls to 0.992 ± 0.200 min but is still worse than SQ and SEWT: splitting
 cashiers into two separate pools loses the pooling benefit.

@@ -18,15 +18,30 @@ export interface ParamSpec {
 
 export type Point = [number, number]
 
+export interface Box { x: number; y: number; w: number; h: number }
+
 export interface Layout {
   width: number
   height: number
   entrance: Point
   exit: Point
   checkout_point: Point
-  sections: Record<string, { x: number; y: number; w: number; h: number }>
+  sections: Record<string, Box>
+  shelves: Record<string, Box[]>
+  header_depth: number
+  /** y of the three aisles that run across every section (back, middle, front). */
+  aisle_rows: number[]
+  /** x of the cross-aisles where customers change aisle row. */
+  cross_aisles: number[]
+  entry_turn: Point
+  exit_walk_y: number
   counters: Point[]
   queue_spacing: number
+}
+
+export interface ExampleRoute {
+  stops: { section: string; point: Point }[]
+  paths: Point[][]
 }
 
 export interface Meta {
@@ -37,6 +52,7 @@ export interface Meta {
   strategies: { key: StrategyKey; label: string }[]
   layout: Layout
   counter_span: { x_min: number; x_max: number; y: number }
+  example_route: ExampleRoute
 }
 
 export interface CounterMetrics {
@@ -105,20 +121,35 @@ export interface TimeSeries {
   queues: Steps[]
 }
 
+/** One customer's day, straight from the engine's events (times in minutes after opening). */
 export interface TraceCustomer {
   id: number
   cat: BasketKey
   items: number
+  /** Walking speed in metres per second. */
+  v: number
+  /** Arrival time. */
   a: number
-  legs: [string, number | null, number | null][]
+  /** Planned route: [section, arrived, left, items]; times are null if not reached by closing. */
+  legs: [string, number | null, number | null, number][]
+  /** Walking routes as corner points: one into each section, then one to the checkout. */
+  p: Point[][]
+  /** Checkout arrival (the moment the counter is chosen). */
   co: number | null
+  /** Chosen counter (0-based). */
   c: number | null
+  /** Service start. */
   ss: number | null
+  /** Departure (end of service). */
   d: number | null
+  /** What the customer saw at the checkout: [people at the counter, estimated wait] per counter. */
+  seen: [number, number][] | null
 }
 
 export interface Trace {
   duration: number
+  strategy: StrategyKey
+  express_limit: number
   layout: Layout
   counters: { index: number; type: 'normal' | 'express' }[]
   customers: TraceCustomer[]
