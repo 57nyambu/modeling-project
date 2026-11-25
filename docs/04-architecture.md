@@ -118,3 +118,13 @@ and no CORS package is needed.
 **Single-server mode** (for a demo or the presentation): run `npm run build` in
 `web/` once, then start only Django. It serves the built interface at
 `http://127.0.0.1:8000/` alongside the API.
+
+## 4.7 Production
+
+On the server, nginx serves `web/dist` and proxies `/api/` to gunicorn on
+`127.0.0.1:4970` (3 workers, 180-second timeout), which PM2 keeps running as
+`supermarket-api`. Settings come from `api/.env` (`DJANGO_SECRET_KEY`,
+`DJANGO_DEBUG=0`, `DJANGO_ALLOWED_HOSTS`); with debug off Django refuses to start
+without a real secret key. nginx rate-limits the requests that run simulations
+and returns its own errors (429, 503, 504) as JSON so the app can show them.
+Steps and checks: `deploy/README.md`.

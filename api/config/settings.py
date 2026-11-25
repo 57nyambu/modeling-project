@@ -13,22 +13,53 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file(path: Path) -> None:
+    """Read KEY=VALUE lines from api/.env (if present) into the environment.
+
+    Real environment variables win, so a CI pipeline or PM2 can still override
+    any value. See api/.env.example for the keys used in production.
+    """
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
+_load_env_file(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me-for-any-real-deployment"
-)
+_DEV_SECRET_KEY = "dev-only-insecure-key-change-me-for-any-real-deployment"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _DEV_SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        "DJANGO_DEBUG=0 needs a real DJANGO_SECRET_KEY. Put one in api/.env (see api/.env.example)."
+    )
+
+ALLOWED_HOSTS = [
+    h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()
+]
 
 
 # Application definition
@@ -80,6 +111,9 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+        # Several gunicorn workers share one SQLite file: wait for a write lock
+        # instead of failing with "database is locked".
+        "OPTIONS": {"timeout": 20},
     }
 }
 
@@ -127,6 +161,17 @@ STATIC_URL = "static/"
 MAILERS = {
     "default": {
         "BACKEND": "django.core.mail.backends.console.EmailBackend",
+    },
+}
+
+# Logging: with DEBUG off, Django would otherwise only e-mail errors (to nobody).
+# Send warnings and errors, with tracebacks, to the console so `pm2 logs` shows them.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": os.environ.get("DJANGO_LOG_LEVEL", "WARNING")},
     },
 }
 

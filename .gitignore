@@ -4,7 +4,11 @@ __pycache__/
 .venv/
 venv/
 *.sqlite3
+*.sqlite3-journal
 *.csv
+
+# Secrets (copy api/.env.example to api/.env on the server)
+.env
 
 # Node
 node_modules/

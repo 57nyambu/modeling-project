@@ -78,6 +78,19 @@ python manage.py runserver
 
 Open http://127.0.0.1:8000. Run `npm run build` again after changing the web code.
 
+## Deploying to a server
+
+`deploy/` holds everything needed to run the app at supermarket.virontech.me:
+nginx serves the built web app and proxies `/api/` to Django under gunicorn and
+PM2, with rate limits on the requests that run simulations. On the server:
+
+```bash
+cd /home/modeling-project && bash deploy/deploy.sh
+```
+
+The one-time setup (Python venv, PM2, `api/.env` with the secret key), the nginx
+and HTTPS steps and the checks are in [deploy/README.md](deploy/README.md).
+
 ## Engine without the web interface
 
 ```powershell
