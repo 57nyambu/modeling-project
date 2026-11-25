@@ -122,6 +122,8 @@ class SimulationResult:
     customers: list[CustomerRecord]
     counters: list[Counter]
     system_series: list[tuple[float, int]]  # customers in store over time
+    waiting_series: list[tuple[float, int]]  # customers waiting in all queues over time
+    busy_series: list[tuple[float, int]]  # busy cashiers over time
     events_processed: int
 
 
@@ -151,7 +153,11 @@ class Simulation:
         self._heap: list[tuple[float, int, int, int, int]] = []
         self._seq = itertools.count()
         self._in_store = 0
+        self._waiting = 0
+        self._busy = 0
         self._system_series: list[tuple[float, int]] = [(0.0, 0)]
+        self._waiting_series: list[tuple[float, int]] = [(0.0, 0)]
+        self._busy_series: list[tuple[float, int]] = [(0.0, 0)]
         self._events = 0
 
     # ------------------------------------------------------------------ #
@@ -160,12 +166,24 @@ class Simulation:
     ) -> None:
         heapq.heappush(self._heap, (time, event, next(self._seq), customer_id, extra))
 
+    def _record(self, series: list[tuple[float, int]], value: int) -> None:
+        """Append a step-function point; several changes at one instant keep the last."""
+        if series[-1][0] == self.clock:
+            series[-1] = (self.clock, value)
+        else:
+            series.append((self.clock, value))
+
     def _set_in_store(self, delta: int) -> None:
         self._in_store += delta
-        if self._system_series[-1][0] == self.clock:
-            self._system_series[-1] = (self.clock, self._in_store)
-        else:
-            self._system_series.append((self.clock, self._in_store))
+        self._record(self._system_series, self._in_store)
+
+    def _set_waiting(self, delta: int) -> None:
+        self._waiting += delta
+        self._record(self._waiting_series, self._waiting)
+
+    def _set_busy(self, delta: int) -> None:
+        self._busy += delta
+        self._record(self._busy_series, self._busy)
 
     # ------------------------------------------------------------------ #
     def run(self) -> SimulationResult:
@@ -199,6 +217,8 @@ class Simulation:
             customers=sorted(self.records.values(), key=lambda r: r.profile.id),
             counters=self.counters,
             system_series=self._system_series,
+            waiting_series=self._waiting_series,
+            busy_series=self._busy_series,
             events_processed=self._events,
         )
 
@@ -238,12 +258,14 @@ class Simulation:
         else:
             counter.queue.append(cid)
             counter.record_queue_change(self.clock)
+            self._set_waiting(+1)
 
     def _start_service(self, counter: Counter, cid: int) -> None:
         rec = self.records[cid]
         counter.current = cid
         counter.current_start = self.clock
         rec.service_start = self.clock
+        self._set_busy(+1)
         self._schedule(
             self.clock + rec.profile.service_time, SERVICE_END, cid, counter.index
         )
@@ -256,9 +278,11 @@ class Simulation:
         counter.served += 1
         counter.current = None
         self._set_in_store(-1)
+        self._set_busy(-1)
         if counter.queue:  # FIFO
             nxt = counter.queue.popleft()
             counter.record_queue_change(self.clock)
+            self._set_waiting(-1)
             self._start_service(counter, nxt)
 
 

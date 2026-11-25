@@ -40,25 +40,35 @@ means with 95% confidence intervals.
 2. **Literature / background** — DES, queueing theory, Poisson process,
    Little's Law, Common Random Numbers
 3. **Conceptual model** — entities, attributes, resources, activities, events,
-   state variables, flow diagram (doc 02)
+   state variables (doc 02; diagrams 3 to 5: entities, process flow, life cycle)
 4. **Mathematical model** — distributions, assumptions, decision rules,
-   performance formulas (doc 03)
+   performance formulas (doc 03; diagrams 9 to 13)
 5. **Implementation** — architecture, engine design, event handling, UI and
-   replay visualisation (doc 04), screenshots
+   replay visualisation (doc 04; diagrams 6 to 8, 14 and 15), screenshots
 6. **Verification and validation** — tests, hand-worked example, M/M/1 check (doc 05)
 7. **Experiments and results** — tables and charts from the app, interpretation
 8. **Conclusions and recommendations** — which strategy, how many counters,
-   limitations (assumptions 1–9) and future work (peak hours, balking,
-   self-checkout, jockeying)
+   limitations (assumptions 1–9) and future work (balking, reneging,
+   self-checkout, jockeying, staff breaks)
+
+Every diagram on the **How the model works** page has SVG and PNG download
+buttons, and every chart has a Matplotlib PNG link, so all report figures come
+straight from the app. The SVG files are also in `docs/diagrams/`
+(see `docs/07-diagrams.md`).
 
 ## Presentation outline (10–15 minutes)
 
+The **How the model works** page doubles as the slide deck: press **Present**
+and use the arrow keys. For the demo, start Django in single-server mode
+(`npm run build` once, then `python manage.py runserver`) so only one window is needed.
+
 1. Problem and objectives (1 slide)
-2. Why simulation, what DES is (1 slide)
-3. Conceptual model diagram (1 slide)
-4. Distributions and assumptions (1 slide)
-5. Architecture and how the animation replays the engine (1 slide)
-6. **Live demo**: run a simulation, pause/resume, show live state and results
-7. Validation table (1 slide)
-8. Strategy comparison results with CIs (2 slides)
-9. Recommendations and limitations (1 slide)
+2. Why simulation, what DES is: diagram 7, next-event time advance
+3. The store and one customer's journey: diagrams 1 and 4
+4. Conceptual model: diagrams 3 and 6
+5. Distributions and assumptions: diagram 10
+6. Strategies: diagram 9, where all three choose a different counter
+7. **Live demo**: run a simulation, pause, scrub to the busiest moment, resume
+8. Validation: diagram 16 and the Validation page
+9. Strategy comparison results with confidence intervals (Compare strategies page)
+10. Recommendations and limitations (1 slide)

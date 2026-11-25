@@ -20,9 +20,19 @@ Two different questions:
 | Time-weighted queue | ∫Q(t)dt equals the sum of individual waiting times inside [0, T] |
 | Strategy rules | Express customers only at express counters; SQ and SEWT choose as specified |
 | Statistics | Mean, standard deviation and t-based CI are correct |
+| Busy cashiers | Time-average of busy cashiers divided by C equals the utilisation |
+| Total waiting | The all-queues series gives the same area as the per-counter queues |
+| Waiting distribution | Customers with no wait plus the histogram counts equal those served; P90 never exceeds the maximum |
+| Time-weighted average | A hand-calculated step function (answer 1.4) |
+| Long-run series | The envelope used for very long runs keeps the largest queue |
+| Peak arrivals | λ(t) averages to λ; thinning reproduces the expected total and puts more arrivals mid-run |
+| Input checks | Unknown profiles, fractional seeds and malformed section shares are rejected |
 
-Django API tests (`api/simulator/tests.py`) cover run creation, charts, CSV
-export, comparisons and rejection of invalid input.
+Django API tests (`api/simulator/tests.py`) cover run creation, every chart, both
+CSV exports, comparisons, the midday-peak profile, rejection of invalid input, and
+the automatic upgrade of results saved by an older version of the engine.
+
+There are 26 engine tests and 6 API tests.
 
 Run them (PowerShell, inside `api` with the virtual environment active):
 
@@ -56,6 +66,9 @@ Run these in the application and confirm the direction of change makes sense:
 - Add a counter → waiting time falls, utilisation falls.
 - Increase scan time per item → service time and waiting rise, large baskets most.
 - Little's Law check on the dashboard: L_q equals λ_eff × W_q.
+- Switch the arrival pattern to the midday peak: the queue timeline and the
+  scrubber shading should rise in the middle of the run, and the load check
+  should warn about the peak load.
 
 ## 9.4 Results at default settings (seed 42, 10 replications)
 

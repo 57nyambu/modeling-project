@@ -8,7 +8,7 @@ from dataclasses import replace
 from .config import SimulationConfig
 from .customers import generate_customers
 from .engine import run_simulation
-from .metrics import compute_metrics
+from .metrics import RESULT_SCHEMA, compute_metrics
 from .strategies import STRATEGIES
 
 # Two-sided 95% Student t critical values t_{df, 0.975}
@@ -50,16 +50,23 @@ _T_975 = {
 
 COMPARED_MEASURES = [
     ("avg_wait", "Average waiting time (min)"),
+    ("p90_wait", "90th percentile waiting time (min)"),
     ("max_wait", "Maximum waiting time (min)"),
+    ("prob_wait", "Share of customers who waited"),
+    ("pct_waited_over_5_min", "Waited over 5 min (%)"),
     ("avg_queue_length", "Average queue length (per counter)"),
     ("max_queue_length", "Maximum queue length"),
     ("avg_service_time", "Average service time (min)"),
     ("avg_time_in_store", "Average time in store (min)"),
+    ("avg_in_store", "Average customers in store"),
     ("utilisation", "Cashier utilisation"),
     ("customers_served", "Customers served"),
+    ("throughput_per_hour", "Customers served per hour"),
     ("remaining", "Remaining at end"),
-    ("pct_waited_over_5_min", "Waited over 5 min (%)"),
 ]
+
+# Measures tested for paired differences against Shortest Queue
+PAIRED_MEASURES = ("avg_wait", "p90_wait", "max_wait", "avg_time_in_store")
 
 
 def t_critical(df: int) -> float:
@@ -119,22 +126,25 @@ def compare_strategies(config: SimulationConfig, replications: int = 10) -> dict
 
     # Paired differences against Shortest Queue (CRN makes pairing valid)
     base = "shortest_queue"
-    paired = {}
+    paired_all: dict[str, dict[str, dict]] = {m: {} for m in PAIRED_MEASURES}
     for key in STRATEGIES:
         if key == base:
             continue
-        diffs = [
-            a["avg_wait"] - b["avg_wait"] for a, b in zip(per_rep[key], per_rep[base])
-        ]
-        paired[key] = summarise(diffs)
+        for m in PAIRED_MEASURES:
+            diffs = [a[m] - b[m] for a, b in zip(per_rep[key], per_rep[base])]
+            paired_all[m][key] = summarise(diffs)
+    paired = paired_all["avg_wait"]
 
     ranking = sorted(summary, key=lambda k: summary[k]["measures"]["avg_wait"]["mean"])
     return {
+        "schema": RESULT_SCHEMA,
         "replications": replications,
         "measures": [{"key": m, "label": label} for m, label in COMPARED_MEASURES],
         "summary": summary,
         "paired_avg_wait_vs_shortest_queue": paired,
+        "paired_vs_shortest_queue": paired_all,
         "ranking_by_avg_wait": ranking,
+        "seeds": [config.seed + r for r in range(replications)],
         "per_replication": {
             k: [{m: run[m] for m, _ in COMPARED_MEASURES} for run in v]
             for k, v in per_rep.items()

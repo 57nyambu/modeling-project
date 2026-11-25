@@ -8,7 +8,8 @@ from .comparison import compare_strategies
 from .config import SimulationConfig
 from .customers import generate_customers
 from .engine import Simulation, SimulationResult, run_simulation
-from .metrics import build_trace, compute_metrics, customers_dataframe, time_series
+from .metrics import (RESULT_SCHEMA, build_trace, compute_metrics, customers_csv, customers_dataframe,
+                      time_series)
 from .strategies import STRATEGIES, get_strategy
 
 __all__ = [
@@ -19,6 +20,8 @@ __all__ = [
     "generate_customers",
     "compute_metrics",
     "customers_dataframe",
+    "customers_csv",
+    "RESULT_SCHEMA",
     "time_series",
     "build_trace",
     "compare_strategies",

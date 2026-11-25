@@ -58,6 +58,26 @@ def generate_arrival_times(
         times.append(t)
 
 
+def generate_arrival_times_thinning(
+    rng: np.random.Generator, cfg: SimulationConfig
+) -> list[float]:
+    """Non-homogeneous Poisson process by thinning (Lewis and Shedler, 1979).
+
+    Candidates are generated at the peak rate lambda_max; a candidate at time t
+    is kept with probability lambda(t) / lambda_max.
+    """
+    lam_max = cfg.peak_arrival_rate()
+    times: list[float] = []
+    t = 0.0
+    while True:
+        u = rng.random()
+        t += -np.log(1.0 - u) / lam_max
+        if t > cfg.duration:
+            return times
+        if rng.random() <= cfg.arrival_rate_at(t) / lam_max:
+            times.append(t)
+
+
 def sample_items(rng: np.random.Generator, cfg: SimulationConfig) -> int:
     category = rng.choice(3, p=[cfg.p_small, cfg.p_medium, cfg.p_large])
     if category == 0:
@@ -83,7 +103,10 @@ def generate_customers(cfg: SimulationConfig) -> list[CustomerProfile]:
     cfg.validate()
     rng = np.random.default_rng(cfg.seed)
     weights = cfg.normalised_section_weights()
-    arrivals = generate_arrival_times(rng, cfg.arrival_rate, cfg.duration)
+    if cfg.arrival_profile == "constant":
+        arrivals = generate_arrival_times(rng, cfg.arrival_rate, cfg.duration)
+    else:
+        arrivals = generate_arrival_times_thinning(rng, cfg)
 
     customers: list[CustomerProfile] = []
     for cid, arrival in enumerate(arrivals, start=1):

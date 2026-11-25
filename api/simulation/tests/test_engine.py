@@ -197,6 +197,76 @@ class TestEngineInvariants(unittest.TestCase):
         self.assertEqual(sewt.customers[2].counter, 1)
 
 
+class TestNewMeasures(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.result = run_simulation(BASE, "shortest_queue")
+        cls.m = compute_metrics(cls.result)
+
+    def test_busy_series_matches_utilisation(self):
+        # Time-average of busy cashiers / C must equal the mean utilisation
+        self.assertAlmostEqual(self.m["avg_busy_cashiers"] / BASE.num_counters, self.m["utilisation"], places=9)
+
+    def test_waiting_series_matches_queue_areas(self):
+        from simulation.metrics import time_average
+        self.assertAlmostEqual(time_average(self.result.waiting_series, BASE.duration),
+                               self.m["avg_total_waiting"], places=9)
+
+    def test_wait_distribution_counts(self):
+        d = self.m["wait_distribution"]
+        self.assertEqual(d["zero"] + d["positive"], self.m["customers_started_service"])
+        self.assertEqual(sum(d["counts"]), d["positive"])
+        self.assertAlmostEqual(1 - d["zero"] / self.m["customers_started_service"], self.m["prob_wait"])
+        self.assertLessEqual(self.m["p90_wait"], self.m["max_wait"] + 1e-12)
+
+    def test_time_average_hand_example(self):
+        from simulation.metrics import time_average
+        # 0 on [0,2), 3 on [2,5), 1 on [5,10) -> (0*2 + 3*3 + 1*5) / 10 = 1.4
+        self.assertAlmostEqual(time_average([(0, 0), (2, 3), (5, 1)], 10), 1.4)
+
+    def test_step_envelope_keeps_peaks(self):
+        from simulation.metrics import step_points
+        series = [(0.0, 0)] + [(i * 0.01, (i % 7)) for i in range(1, 9000)]
+        pts, decimated = step_points(series, 100.0, max_points=1000)
+        self.assertTrue(decimated)
+        self.assertLessEqual(len(pts), 1000)
+        self.assertEqual(max(v for _, v in pts), 6)
+
+
+class TestPeakArrivals(unittest.TestCase):
+    def test_rate_function_averages_to_lambda(self):
+        cfg = SimulationConfig(arrival_profile="peak", peak_amplitude=1.2, arrival_rate=2.0, duration=300)
+        grid = [cfg.arrival_rate_at(t) for t in [i * 0.3 for i in range(1000)]]
+        self.assertAlmostEqual(sum(grid) / len(grid), 2.0, places=2)
+        self.assertAlmostEqual(cfg.arrival_rate_at(150), 2.0 * 1.6)
+        self.assertAlmostEqual(cfg.arrival_rate_at(0), 2.0 * 0.4)
+
+    def test_thinning_reproduces_profile(self):
+        counts_mid, counts_edge, total = 0, 0, 0
+        for seed in range(20):
+            cfg = SimulationConfig(arrival_profile="peak", peak_amplitude=1.0, seed=seed, duration=240)
+            times = [c.arrival_time for c in generate_customers(cfg)]
+            total += len(times)
+            counts_mid += sum(1 for t in times if 100 <= t < 140)
+            counts_edge += sum(1 for t in times if t < 40)
+        # Expected total 20 * 1.4 * 240 = 6720; middle 40 minutes run near 1.5x, first 40 near 0.6x
+        self.assertAlmostEqual(total / 6720, 1.0, delta=0.05)
+        self.assertGreater(counts_mid, 2 * counts_edge)
+
+    def test_constant_profile_unchanged(self):
+        a = [c.arrival_time for c in generate_customers(BASE)]
+        b = [c.arrival_time for c in generate_customers(replace(BASE, peak_amplitude=1.5))]
+        self.assertEqual(a, b)  # amplitude is ignored unless the profile is "peak"
+
+    def test_rejects_bad_profile(self):
+        with self.assertRaises(ValueError):
+            SimulationConfig.from_dict({"arrival_profile": "rush"})
+        with self.assertRaises(ValueError):
+            SimulationConfig.from_dict({"seed": 1.5})
+        with self.assertRaises(ValueError):
+            SimulationConfig.from_dict({"section_weights": 3})
+
+
 class TestStatistics(unittest.TestCase):
     def test_summarise(self):
         s = summarise([1, 2, 3, 4])

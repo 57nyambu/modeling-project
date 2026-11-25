@@ -6,6 +6,7 @@ Every input to the model lives in one dataclass so a run is fully described by
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field, fields
 
 SECTIONS = ("grocery", "beverages", "household", "personal_care")
@@ -20,6 +21,11 @@ SECTION_LABELS = {
 SMALL_MAX_ITEMS = 5
 MEDIUM_MAX_ITEMS = 15
 EXPRESS_ITEM_LIMIT = 5  # customers with <= 5 items use express counters (Strategy 3)
+
+ARRIVAL_PROFILES = ("constant", "peak")
+SERVICE_MODELS = ("items", "exponential")
+STRING_FIELDS = {"arrival_profile", "service_model"}
+INT_FIELDS = {"seed", "num_counters", "num_express", "large_max_items"}
 
 
 def _default_section_weights() -> dict[str, float]:
@@ -37,8 +43,14 @@ class SimulationConfig:
     duration: float = 240.0  # run length T (minutes)
     seed: int = 42
 
-    # Arrivals: Poisson process, rate lambda (customers per minute)
+    # Arrivals: Poisson process, rate lambda (customers per minute).
+    # "constant": homogeneous Poisson process with rate lambda.
+    # "peak": non-homogeneous Poisson process with a mid-run peak,
+    #   lambda(t) = lambda * ((1 - A/2) + A * sin^2(pi * t / T)),
+    #   whose average over [0, T] is still lambda (see docs/03 section 3.2).
     arrival_rate: float = 1.4
+    arrival_profile: str = "constant"
+    peak_amplitude: float = 1.0  # A: 0 = flat, 1 = 0.5x at open/close and 1.5x at the peak
 
     # Checkout resources
     num_counters: int = 4
@@ -82,6 +94,14 @@ class SimulationConfig:
             0 < self.arrival_rate <= 20,
             "arrival_rate must be between 0 and 20 per minute",
         )
+        need(
+            self.arrival_profile in ARRIVAL_PROFILES,
+            f"arrival_profile must be one of {', '.join(ARRIVAL_PROFILES)}",
+        )
+        need(
+            0 <= self.peak_amplitude <= 1.9,
+            "peak_amplitude must be between 0 and 1.9",
+        )
         need(1 <= self.num_counters <= 10, "num_counters must be between 1 and 10")
         need(
             0 <= self.num_express <= self.num_counters,
@@ -119,7 +139,7 @@ class SimulationConfig:
             "payment times must satisfy min <= mode <= max and min < max",
         )
         need(
-            self.service_model in ("items", "exponential"),
+            self.service_model in SERVICE_MODELS,
             "service_model must be 'items' or 'exponential'",
         )
         need(self.exp_service_mean > 0, "exp_service_mean must be > 0")
@@ -128,6 +148,19 @@ class SimulationConfig:
             raise ValueError("; ".join(errors))
 
     # ------------------------------------------------------------------ #
+    def arrival_rate_at(self, t: float) -> float:
+        """lambda(t): the arrival rate at time t (customers per minute)."""
+        if self.arrival_profile == "constant":
+            return self.arrival_rate
+        a = self.peak_amplitude
+        return self.arrival_rate * ((1 - a / 2) + a * math.sin(math.pi * t / self.duration) ** 2)
+
+    def peak_arrival_rate(self) -> float:
+        """Upper bound lambda_max used by thinning."""
+        if self.arrival_profile == "constant":
+            return self.arrival_rate
+        return self.arrival_rate * (1 + self.peak_amplitude / 2)
+
     def expected_service_time(self, items: int) -> float:
         """E[S | n]: what a customer can predict from a visible basket size."""
         if self.service_model == "exponential":
@@ -151,17 +184,28 @@ class SimulationConfig:
         unknown = set(data) - known
         if unknown:
             raise ValueError(f"unknown parameter(s): {', '.join(sorted(unknown))}")
-        int_fields = {"seed", "num_counters", "num_express", "large_max_items"}
         clean: dict = {}
         for key, value in data.items():
-            if key == "section_weights":
-                clean[key] = {k: float(v) for k, v in dict(value).items()}
-            elif key == "service_model":
-                clean[key] = str(value)
-            elif key in int_fields:
-                clean[key] = int(value)
-            else:
-                clean[key] = float(value)
+            try:
+                if key == "section_weights":
+                    if not isinstance(value, dict):
+                        raise TypeError
+                    clean[key] = {str(k): float(v) for k, v in value.items()}
+                elif key in STRING_FIELDS:
+                    clean[key] = str(value)
+                elif key in INT_FIELDS:
+                    number = float(value)
+                    if not number.is_integer():
+                        raise ValueError(f"{key} must be a whole number")
+                    clean[key] = int(number)
+                else:
+                    clean[key] = float(value)
+            except (TypeError, ValueError) as exc:
+                if "whole number" in str(exc):
+                    raise
+                raise ValueError(f"{key} has an invalid value: {value!r}") from None
+            if isinstance(clean[key], float) and not math.isfinite(clean[key]):
+                raise ValueError(f"{key} must be a finite number")
         cfg = cls(**clean)
         cfg.validate()
         return cfg

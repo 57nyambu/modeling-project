@@ -3,6 +3,7 @@
 // walking between known points, so the animation is a faithful replay of the model.
 
 import type { Layout, Point, Trace, TraceCustomer } from '../api'
+import { AISLE_MARGIN, QUEUE_ROOM, SERVICE_OFFSET, aisles } from './floorplan'
 
 export type Status = 'walking' | 'shopping' | 'waiting' | 'service' | 'leaving'
 
@@ -23,19 +24,20 @@ export interface Snapshot {
   inService: number
   queues: number[]
   busy: boolean[]
+  servedBy: number[]
 }
 
-const EXIT_WALK = 0.6 // minutes, drawing only (see assumption 9)
-const UNKNOWN_WALK = 0.5 // used only when a walk is cut off by the end of the run
-const SERVICE_OFFSET = 1.0 // metres above the counter where the customer being served stands
-const QUEUE_ROOM = 6.2 // metres available for a visible queue
+// Drawing-only durations (the model treats both as instantaneous; see assumption 9)
+const EXIT_WALK = 0.6 // minutes from the counter to the exit after paying
+const JOIN_GLIDE = 0.12 // minutes to glide from the decision point into the chosen lane
+const UNKNOWN_WALK = 0.5 // only used when a walk is cut off by the end of the run
 
-interface Prepared {
+export interface Prepared {
   c: TraceCustomer
-  points: Point[] // one jittered point inside each section on the route
+  points: Point[] // one point in an aisle of each section on the route
 }
 
-// Deterministic pseudo-random number in [0,1) from an integer, so jitter is stable.
+// Deterministic pseudo-random number in [0,1) from an integer, so positions are stable.
 function hash01(n: number): number {
   let x = (n * 2654435761) >>> 0
   x ^= x >>> 16
@@ -50,11 +52,10 @@ export function prepare(trace: Trace): Prepared[] {
     c,
     points: c.legs.map(([name], i) => {
       const r = sections[name]
-      const m = 0.9
-      return [
-        r.x + m + hash01(c.id * 7 + i) * (r.w - 2 * m),
-        r.y + m + 1.2 + hash01(c.id * 13 + i + 5) * (r.h - 2 * m - 1.2),
-      ] as Point
+      const ys = aisles(r)
+      const aisle = ys[Math.floor(hash01(c.id * 13 + i + 5) * ys.length) % ys.length]
+      const x = r.x + AISLE_MARGIN + hash01(c.id * 7 + i) * (r.w - 2 * AISLE_MARGIN)
+      return [x, aisle] as Point
     }),
   }))
 }
@@ -71,7 +72,6 @@ export function servicePoint(layout: Layout, counter: number): Point {
 
 function shoppingPosition(p: Prepared, t: number, layout: Layout): { pos: [number, number]; status: Status } {
   const { c, points } = p
-  // Entrance -> first section
   const firstArr = c.legs[0][1]
   if (firstArr === null || t < firstArr) {
     const span = firstArr === null ? UNKNOWN_WALK : firstArr - c.a
@@ -98,6 +98,7 @@ export function snapshot(prepared: Prepared[], trace: Trace, t: number): Snapsho
   const placed: Placed[] = []
   const waitingBy: Prepared[][] = Array.from({ length: nCounters }, () => [])
   const busy = Array(nCounters).fill(false) as boolean[]
+  const servedBy = Array(nCounters).fill(0) as number[]
   let generated = 0
   let served = 0
   let shopping = 0
@@ -109,6 +110,7 @@ export function snapshot(prepared: Prepared[], trace: Trace, t: number): Snapsho
     generated++
     if (c.d !== null && c.d <= t) {
       served++
+      if (c.c !== null) servedBy[c.c]++
       if (t < c.d + EXIT_WALK && c.c !== null) {
         const [x, y] = lerp(servicePoint(layout, c.c), layout.exit, (t - c.d) / EXIT_WALK)
         placed.push({ id: c.id, cat: c.cat, x, y, status: 'leaving' })
@@ -136,7 +138,10 @@ export function snapshot(prepared: Prepared[], trace: Trace, t: number): Snapsho
     const [sx, sy] = servicePoint(layout, ci)
     const spacing = Math.min(layout.queue_spacing, QUEUE_ROOM / Math.max(1, list.length))
     list.forEach((p, k) => {
-      placed.push({ id: p.c.id, cat: p.c.cat, x: sx, y: sy - (k + 1) * spacing, status: 'waiting' })
+      const slot: Point = [sx, sy - (k + 1) * spacing]
+      const since = t - p.c.co!
+      const [x, y] = since < JOIN_GLIDE ? lerp(layout.checkout_point, slot, since / JOIN_GLIDE) : slot
+      placed.push({ id: p.c.id, cat: p.c.cat, x, y, status: 'waiting' })
     })
     return list.length
   })
@@ -150,5 +155,6 @@ export function snapshot(prepared: Prepared[], trace: Trace, t: number): Snapsho
     inService,
     queues,
     busy,
+    servedBy,
   }
 }

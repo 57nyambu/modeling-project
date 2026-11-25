@@ -2,12 +2,29 @@
 
 A Discrete-Event Simulation (DES) of customers entering a supermarket, shopping
 in four sections, choosing a checkout counter, queueing, paying and leaving. It
-compares three checkout strategies under identical customer streams.
+compares three checkout strategies on identical customer streams and explains
+the model through seventeen diagrams.
+
+![Simulation page: floor-plan replay, timeline and live state](docs/images/simulation.png)
 
 - `api/` — Python simulation engine (`api/simulation`) and Django API (`api/simulator`)
-- `web/` — React + TypeScript interface (dashboard, 2D animated store, comparison)
+- `web/` — React + TypeScript interface
 - `docs/` — requirements, conceptual model, mathematical model, architecture,
-  testing and validation, plan and report outline
+  testing and validation, plan and report outline, and the model diagrams
+
+## What the app does
+
+| Page | What you can do |
+|---|---|
+| **Simulation** | Set parameters (with a live load check), choose a strategy and press **Start simulation**. The whole day is simulated on the server, then the floor plan replays it. **Pause**, **Resume**, **Reset**, jump to the end, change the speed, or drag the timeline, whose shading shows when queues build. Results include every required measure, queue charts per counter, waiting-time distribution, cashier utilisation and a log of every customer. |
+| **Compare strategies** | Run all three strategies on the same customers for several replications. See a plain-language verdict, means with 95% confidence intervals, paired significance tests, every replication, and waits by basket size. |
+| **How the model works** | Walk through 17 diagrams: store layout, conceptual model, process flow, life cycle, event graph, engine loop, a worked example, strategy rules, distributions, arrivals, measures, experiment design, architecture, request sequence, validation and stages. **Present** opens them full screen; **SVG** and **PNG** download them for the report. |
+| **Validation** | Check the engine against exact M/M/1 queueing formulas. |
+| **Saved results** | Reopen or delete stored runs and comparisons. Every result can be reproduced from its seed. |
+
+![Compare strategies page](docs/images/compare.png)
+
+![How the model works page](docs/images/diagrams.png)
 
 ## Requirements
 
@@ -46,17 +63,20 @@ npm run dev
 Open http://localhost:5173. Vite forwards `/api` requests to Django, so both
 servers must be running.
 
-## Using the application
+### Single-server mode (for a demo or the presentation)
 
-- **Simulation** — set parameters, choose a strategy, press **Start simulation**.
-  The run is computed by the engine, stored in SQLite and replayed on the store
-  layout. Use Pause, Resume, Reset, End, the speed selector and the time slider.
-  Results, counter tables, Matplotlib charts and a CSV export appear below.
-- **Compare strategies** — runs all three strategies for R replications on the
-  same customers and shows means with 95% confidence intervals, paired
-  differences and charts.
-- **History** — reopen or delete stored runs and comparisons.
-- **Validation** — reproduces M/M/1 queueing theory to validate the engine.
+Build the interface once; Django then serves it together with the API, so only
+one terminal is needed:
+
+```powershell
+cd web
+npm run build
+cd ..\api
+.\.venv\Scripts\Activate.ps1
+python manage.py runserver
+```
+
+Open http://127.0.0.1:8000. Run `npm run build` again after changing the web code.
 
 ## Engine without the web interface
 
@@ -89,3 +109,4 @@ python manage.py test simulator
 | 5–8. Engine, strategies, interface, analysis | Code in `api/` and `web/` |
 | 9. Testing and validation | [docs/05-testing-validation.md](docs/05-testing-validation.md) |
 | 10. Plan, report and presentation | [docs/06-plan-and-report.md](docs/06-plan-and-report.md) |
+| Model diagrams | [docs/07-diagrams.md](docs/07-diagrams.md) |

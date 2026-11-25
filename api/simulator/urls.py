@@ -11,5 +11,6 @@ urlpatterns = [
     path("comparisons", views.comparisons_view),
     path("comparisons/<int:pk>", views.comparison_detail_view),
     path("comparisons/<int:pk>/charts/<slug:name>.png", views.comparison_chart_view),
+    path("comparisons/<int:pk>/replications.csv", views.comparison_csv_view),
     path("validation", views.validation_view),
 ]

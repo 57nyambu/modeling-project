@@ -1,7 +1,9 @@
 // Typed client for the Django API. In development Vite proxies /api to Django.
 
 export type StrategyKey = 'shortest_queue' | 'shortest_wait' | 'express'
-export type Params = Record<string, number | string | Record<string, number>>
+export type BasketKey = 'small' | 'medium' | 'large'
+export type ParamValue = number | string | Record<string, number>
+export type Params = Record<string, ParamValue>
 
 export interface ParamSpec {
   key: string
@@ -12,49 +14,6 @@ export interface ParamSpec {
   step: number
   group: string
   help: string
-}
-
-export interface Meta {
-  defaults: Params
-  parameters: ParamSpec[]
-  sections: Record<string, string>
-  strategies: { key: StrategyKey; label: string }[]
-}
-
-export interface CounterMetrics {
-  counter: number
-  type: 'normal' | 'express'
-  served: number
-  utilisation: number
-  avg_queue_length: number
-  max_queue_length: number
-  avg_wait: number
-}
-
-export interface Metrics {
-  strategy: StrategyKey
-  strategy_label: string
-  duration: number
-  customers_generated: number
-  customers_served: number
-  customers_started_service: number
-  avg_wait: number
-  max_wait: number
-  avg_queue_length: number
-  avg_total_waiting: number
-  max_queue_length: number
-  avg_service_time: number
-  avg_time_in_store: number
-  utilisation: number
-  remaining: number
-  remaining_breakdown: { shopping: number; waiting: number; in_service: number }
-  pct_waited_over_5_min: number
-  littles_law: { lq_observed: number; lambda_wq: number }
-  counters: CounterMetrics[]
-  by_category: Record<'small' | 'medium' | 'large', {
-    generated: number; served: number; avg_wait: number; avg_time_in_store: number
-  }>
-  events_processed: number
 }
 
 export type Point = [number, number]
@@ -70,9 +29,85 @@ export interface Layout {
   queue_spacing: number
 }
 
+export interface Meta {
+  defaults: Params
+  parameters: ParamSpec[]
+  arrival_profiles: string[]
+  sections: Record<string, string>
+  strategies: { key: StrategyKey; label: string }[]
+  layout: Layout
+  counter_span: { x_min: number; x_max: number; y: number }
+}
+
+export interface CounterMetrics {
+  counter: number
+  type: 'normal' | 'express'
+  served: number
+  utilisation: number
+  avg_queue_length: number
+  max_queue_length: number
+  avg_wait: number
+  avg_service_time: number
+}
+
+export interface WaitDistribution {
+  zero: number
+  positive: number
+  mean_positive: number
+  bin_width: number
+  edges: number[]
+  counts: number[]
+}
+
+export interface Metrics {
+  schema: number
+  strategy: StrategyKey
+  strategy_label: string
+  duration: number
+  customers_generated: number
+  customers_served: number
+  customers_started_service: number
+  throughput_per_hour: number
+  avg_wait: number
+  max_wait: number
+  p90_wait: number
+  prob_wait: number
+  pct_waited_over_5_min: number
+  avg_queue_length: number
+  avg_total_waiting: number
+  max_queue_length: number
+  avg_in_store: number
+  max_in_store: number
+  avg_busy_cashiers: number
+  avg_service_time: number
+  avg_time_in_store: number
+  utilisation: number
+  remaining: number
+  remaining_breakdown: { shopping: number; waiting: number; in_service: number }
+  littles_law: { lq_observed: number; lambda_wq: number }
+  wait_distribution: WaitDistribution
+  counters: CounterMetrics[]
+  by_category: Record<BasketKey, {
+    generated: number; served: number; avg_wait: number; prob_wait: number; avg_time_in_store: number
+  }>
+  events_processed: number
+}
+
+/** Step function: [time, value] at every change point. */
+export type Steps = Point[]
+
+export interface TimeSeries {
+  duration: number
+  decimated: boolean
+  in_store: Steps
+  waiting: Steps
+  busy: Steps
+  queues: Steps[]
+}
+
 export interface TraceCustomer {
   id: number
-  cat: 'small' | 'medium' | 'large'
+  cat: BasketKey
   items: number
   a: number
   legs: [string, number | null, number | null][]
@@ -107,7 +142,7 @@ export interface RunSummary {
 export interface Run extends RunSummary {
   parameters: Params
   metrics: Metrics
-  timeseries: { t: number[]; in_store: number[]; queues: number[][] }
+  timeseries: TimeSeries
   trace: Trace | null
 }
 
@@ -129,15 +164,20 @@ export interface ComparisonSummary {
 export interface Comparison extends ComparisonSummary {
   parameters: Params
   results: {
+    schema: number
     replications: number
+    seeds: number[]
     measures: { key: string; label: string }[]
     summary: Record<StrategyKey, {
       label: string
       measures: Record<string, Stat>
-      by_category_wait: Record<'small' | 'medium' | 'large', Stat>
+      by_category_wait: Record<BasketKey, Stat>
     }>
     paired_avg_wait_vs_shortest_queue: Partial<Record<StrategyKey, Stat>>
+    paired_vs_shortest_queue: Record<string, Partial<Record<StrategyKey, Stat>>>
     ranking_by_avg_wait: StrategyKey[]
+    per_replication: Record<StrategyKey, Record<string, number>[]>
+    timeseries: Record<StrategyKey, TimeSeries>
   }
 }
 
@@ -160,21 +200,26 @@ export interface Validation {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    })
+  } catch {
+    throw new Error('Cannot reach the simulation API. Check that Django is running on port 8000.')
+  }
   if (res.status === 204) return undefined as T
   const text = await res.text()
   let data: unknown = null
   try {
     data = text ? JSON.parse(text) : null
   } catch {
-    throw new Error(res.ok ? 'Invalid response from server' : `Server error (${res.status})`)
+    throw new Error(res.ok ? 'The server sent a response that is not JSON.' : `The server returned an error (${res.status}).`)
   }
   if (!res.ok) {
     const msg = (data as { error?: string } | null)?.error
-    throw new Error(msg ?? `Request failed (${res.status})`)
+    throw new Error(msg ? msg.charAt(0).toUpperCase() + msg.slice(1) + '.' : `Request failed (${res.status}).`)
   }
   return data as T
 }
@@ -201,3 +246,4 @@ export const api = {
 export const runChartUrl = (id: number, name: string) => `/api/runs/${id}/charts/${name}.png`
 export const comparisonChartUrl = (id: number, name: string) => `/api/comparisons/${id}/charts/${name}.png`
 export const runCsvUrl = (id: number) => `/api/runs/${id}/customers.csv`
+export const comparisonCsvUrl = (id: number) => `/api/comparisons/${id}/replications.csv`
